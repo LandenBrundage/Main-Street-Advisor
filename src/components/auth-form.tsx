@@ -1,0 +1,185 @@
+"use client";
+import { useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { Loader2 } from "lucide-react";
+export function AuthForm({
+  mode,
+  demoMode = false,
+}: {
+  mode: "sign-in" | "sign-up" | "reset";
+  demoMode?: boolean;
+}) {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [sent, setSent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const s = createClient();
+      if (mode === "reset") {
+        const { error } = await s.auth.resetPasswordForEmail(email, {
+          redirectTo: `${location.origin}/auth/callback?next=/update-password`,
+        });
+        if (error) throw error;
+        setSent(true);
+      } else if (mode === "sign-up") {
+        const { error } = await s.auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${location.origin}/auth/callback` },
+        });
+        if (error) throw error;
+        setSent(true);
+      } else {
+        const { error } = await s.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        router.replace("/app");
+        router.refresh();
+      }
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Unable to continue. Please try again.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function google() {
+    setBusy(true);
+    setError("");
+    try {
+      const { error } = await createClient().auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${location.origin}/auth/callback` },
+      });
+      if (error) throw error;
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Google sign-in could not start.",
+      );
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="card w-full max-w-md p-7">
+      <h1 className="text-2xl font-semibold text-slate-950">
+        {mode === "sign-in"
+          ? "Welcome back"
+          : mode === "sign-up"
+            ? "Create your account"
+            : "Reset your password"}
+      </h1>
+      <p className="mt-2 text-sm text-slate-500">
+        {mode === "reset"
+          ? "We’ll email you a secure reset link."
+          : "Practical guidance, organized into action."}
+      </p>
+      {sent ? (
+        <div className="mt-6 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+          Check your email for the next step.
+        </div>
+      ) : (
+        <>
+          <form onSubmit={submit} className="mt-6 space-y-4">
+            <label className="block">
+              <span className="label">Email</span>
+              <input
+                className="field"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </label>
+            {mode !== "reset" && (
+              <label className="block">
+                <span className="label">Password</span>
+                <input
+                  className="field"
+                  type="password"
+                  required
+                  minLength={8}
+                  autoComplete={
+                    mode === "sign-up" ? "new-password" : "current-password"
+                  }
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </label>
+            )}
+            {error && (
+              <p role="alert" className="text-sm text-red-700">
+                {error}
+              </p>
+            )}
+            <button className="btn-primary w-full" disabled={busy}>
+              {busy && <Loader2 className="size-4 animate-spin" />}
+              {mode === "sign-in"
+                ? "Sign in"
+                : mode === "sign-up"
+                  ? "Create account"
+                  : "Send reset link"}
+            </button>
+          </form>
+          {mode !== "reset" && (
+            <>
+              <div className="my-5 flex items-center gap-3 text-xs text-slate-400">
+                <span className="h-px flex-1 bg-slate-200" />
+                OR
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
+              <button
+                type="button"
+                onClick={google}
+                className="btn-secondary w-full"
+                disabled={busy}
+              >
+                Continue with Google
+              </button>
+              {demoMode && (
+                <button
+                  type="button"
+                  onClick={() => router.replace("/demo")}
+                  className="btn-secondary mt-3 w-full"
+                  disabled={busy}
+                >
+                  Open demo workspace
+                </button>
+              )}
+            </>
+          )}
+        </>
+      )}
+      <p className="mt-6 text-center text-sm text-slate-500">
+        {mode === "sign-in" ? (
+          <>
+            <Link
+              className="text-blue-700 hover:underline"
+              href="/reset-password"
+            >
+              Forgot password?
+            </Link>
+            <span className="mx-2">·</span>
+            <Link className="text-blue-700 hover:underline" href="/sign-up">
+              Create account
+            </Link>
+          </>
+        ) : (
+          <Link className="text-blue-700 hover:underline" href="/sign-in">
+            Back to sign in
+          </Link>
+        )}
+      </p>
+    </div>
+  );
+}

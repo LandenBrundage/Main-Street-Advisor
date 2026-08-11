@@ -1,0 +1,64 @@
+{
+  "name": "main-street-advisor",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.25",
+      "sharp": "0.35.3"
+    },
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
+  },
+  "scripts": {
+    "dev": "bash scripts/with-supported-node.sh node_modules/next/dist/bin/next dev",
+    "dev:demo": "ENABLE_DEMO_MODE=true ENABLE_DEMO_AI=true ENABLE_AI_MOCKS=false NEXT_DIST_DIR=.next-demo bash scripts/with-supported-node.sh node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3001",
+    "dev:demo:offline": "ENABLE_DEMO_MODE=true ENABLE_DEMO_AI=false NEXT_DIST_DIR=.next-demo bash scripts/with-supported-node.sh node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3001",
+    "build": "bash scripts/with-supported-node.sh node_modules/next/dist/bin/next build",
+    "start": "bash scripts/with-supported-node.sh node_modules/next/dist/bin/next start",
+    "lint": "bash scripts/with-supported-node.sh node_modules/eslint/bin/eslint.js .",
+    "typecheck": "bash scripts/with-supported-node.sh node_modules/typescript/bin/tsc --noEmit",
+    "test": "bash scripts/with-supported-node.sh node_modules/vitest/vitest.mjs run",
+    "test:watch": "bash scripts/with-supported-node.sh node_modules/vitest/vitest.mjs",
+    "test:e2e": "bash scripts/with-supported-node.sh node_modules/@playwright/test/cli.js test",
+    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.4.0",
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.110.2",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
+    "exceljs": "^4.4.0",
+    "lucide-react": "^1.24.0",
+    "next": "16.2.12",
+    "openai": "^6.46.0",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "react-hook-form": "^7.81.0",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.12",
+    "jsdom": "^29.1.1",
+    "prettier": "^3.9.5",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vitest": "^4.1.10"
+  }
+}

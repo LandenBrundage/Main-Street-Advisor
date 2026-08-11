@@ -1,0 +1,127 @@
+@import "tailwindcss";
+
+/* Palette derived from the uploaded MSA logo's dominant trust blue (#003CA2). */
+@theme {
+  --color-blue-50: #f0f5ff;
+  --color-blue-100: #e1ebfb;
+  --color-blue-200: #c6d9f5;
+  --color-blue-300: #9ebfea;
+  --color-blue-400: #6d9bdb;
+  --color-blue-500: #2f6dc1;
+  --color-blue-600: #003ca2;
+  --color-blue-700: #00358f;
+  --color-blue-800: #002c77;
+  --color-blue-900: #00245f;
+  --color-blue-950: #001638;
+}
+
+:root {
+  --background: #fff;
+  --foreground: #172033;
+  --accent: #003ca2;
+}
+* {
+  box-sizing: border-box;
+}
+html {
+  background: var(--background);
+}
+body {
+  margin: 0;
+  background: #f8fafc;
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+:focus-visible {
+  outline: 3px solid var(--color-blue-300);
+  outline-offset: 2px;
+}
+::selection {
+  background: var(--color-blue-100);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .field {
+    @apply w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-slate-700;
+  }
+  .card {
+    @apply rounded-xl border border-slate-200 bg-white shadow-sm;
+  }
+  .chat-markdown {
+    @apply space-y-3;
+  }
+  .chat-markdown > :first-child {
+    @apply mt-0;
+  }
+  .chat-markdown > :last-child {
+    @apply mb-0;
+  }
+  .chat-markdown h1,
+  .chat-markdown h2,
+  .chat-markdown h3 {
+    @apply mt-5 font-semibold leading-snug text-slate-950;
+  }
+  .chat-markdown h1 {
+    @apply text-xl;
+  }
+  .chat-markdown h2 {
+    @apply text-lg;
+  }
+  .chat-markdown h3 {
+    @apply text-base;
+  }
+  .chat-markdown ul {
+    @apply list-disc space-y-1 pl-6;
+  }
+  .chat-markdown ol {
+    @apply list-decimal space-y-1 pl-6;
+  }
+  .chat-markdown a {
+    @apply font-medium text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-800;
+  }
+  .chat-markdown blockquote {
+    @apply border-l-4 border-blue-200 bg-blue-50/60 px-4 py-2 text-slate-600;
+  }
+  .chat-markdown pre {
+    @apply overflow-x-auto rounded-lg bg-slate-950 p-4 text-sm leading-6 text-slate-100;
+  }
+  .chat-markdown :not(pre) > code {
+    @apply rounded bg-slate-100 px-1.5 py-0.5 text-[0.9em] text-slate-800;
+  }
+  .skeleton {
+    @apply animate-pulse rounded-lg bg-slate-100;
+  }
+}
