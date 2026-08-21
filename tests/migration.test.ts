@@ -21,6 +21,13 @@ const completionSql = readFileSync(
   ),
   "utf8",
 );
+const privacySql = readFileSync(
+  new URL(
+    "../supabase/migrations/202608200001_privacy_controls.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 describe("goal migration safety", () => {
   it("preserves tasks while removing folder assignments", () => {
     expect(sql).toContain("update public.tasks set folder_id = null");
@@ -130,5 +137,25 @@ describe("completion workflow migration", () => {
     expect(completionSql).toContain(
       "grant execute on function public.set_goal_completion(uuid, uuid, boolean, boolean) to authenticated",
     );
+  });
+});
+
+describe("privacy controls migration", () => {
+  it("adds opt-out controls without disabling existing personalization", () => {
+    expect(privacySql).toContain("ai_workspace_context_enabled");
+    expect(privacySql).toContain("ai_cross_conversation_enabled");
+    expect(privacySql).toContain("ai_document_search_enabled");
+    expect(privacySql.match(/not null default true/g)).toHaveLength(3);
+  });
+
+  it("keeps rate buckets private and scopes consumption to auth.uid", () => {
+    expect(privacySql).toContain(
+      "alter table public.api_rate_limit_buckets enable row level security",
+    );
+    expect(privacySql).toContain("caller_id uuid := auth.uid()");
+    expect(privacySql).toContain(
+      "revoke all on function public.consume_api_rate_limit",
+    );
+    expect(privacySql).toContain("to authenticated");
   });
 });

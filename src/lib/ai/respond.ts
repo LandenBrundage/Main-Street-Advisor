@@ -1,5 +1,11 @@
 import type OpenAI from "openai";
 import { RETRIEVAL_TOOL_NAMES, retrievalTools } from "@/lib/ai/retrieval-tools";
+import { AI_MAX_OUTPUT_TOKENS } from "@/lib/config";
+import {
+  enforceResponseModeration,
+  ModerationBlockedError,
+  responseModerationConfig,
+} from "@/lib/ai/moderation";
 import { CONSULTANT_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
 import { createTaskPlanTool, proposeTaskCompletionTool } from "@/lib/ai/tools";
 
@@ -11,6 +17,7 @@ export type ConsultantActionCall = {
 };
 export type ConsultantResponse = OpenAI.Responses.Response & {
   actionCalls: ConsultantActionCall[];
+  moderationBlocked?: "output";
 };
 export async function requestConsultantResponse({
   openai,
@@ -19,6 +26,9 @@ export async function requestConsultantResponse({
   messages,
   vectorStoreId,
   executeRetrieval,
+  safetyIdentifier = "local-test-safety-id",
+  allowActionTools = true,
+  allowedRetrievalToolNames = RETRIEVAL_TOOL_NAMES,
 }: {
   openai: OpenAI;
   model: string;
@@ -26,11 +36,16 @@ export async function requestConsultantResponse({
   messages: ModelMessage[];
   vectorStoreId?: string;
   executeRetrieval?: (name: string, rawArguments: string) => Promise<unknown>;
+  safetyIdentifier?: string;
+  allowActionTools?: boolean;
+  allowedRetrievalToolNames?: ReadonlySet<string>;
 }): Promise<ConsultantResponse> {
   const tools: OpenAI.Responses.Tool[] = [
-    createTaskPlanTool,
-    proposeTaskCompletionTool,
-    ...retrievalTools,
+    ...(allowActionTools ? [createTaskPlanTool, proposeTaskCompletionTool] : []),
+    ...retrievalTools.filter(
+      (tool) =>
+        tool.type !== "function" || allowedRetrievalToolNames.has(tool.name),
+    ),
     ...(vectorStoreId
       ? [
           {
@@ -52,8 +67,21 @@ export async function requestConsultantResponse({
       input,
       tools,
       parallel_tool_calls: false,
+      max_output_tokens: AI_MAX_OUTPUT_TOKENS,
+      moderation: responseModerationConfig,
+      safety_identifier: safetyIdentifier,
       store: false,
     });
+    try {
+      enforceResponseModeration(response);
+    } catch (error) {
+      if (error instanceof ModerationBlockedError && error.side === "output")
+        return Object.assign(response, {
+          actionCalls: [],
+          moderationBlocked: "output" as const,
+        });
+      throw error;
+    }
     const calls = response.output.filter(
       (item): item is OpenAI.Responses.ResponseFunctionToolCall =>
         item.type === "function_call",
@@ -85,7 +113,7 @@ export async function requestConsultantResponse({
         });
         continue;
       }
-      if (!RETRIEVAL_TOOL_NAMES.has(call.name) || !executeRetrieval) {
+      if (!allowedRetrievalToolNames.has(call.name) || !executeRetrieval) {
         outputs.push({
           type: "function_call_output",
           call_id: call.call_id,

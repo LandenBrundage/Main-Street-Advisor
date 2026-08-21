@@ -145,3 +145,55 @@ test("profile autosave and app shell remain usable across responsive widths", as
     page.getByRole("link", { name: "Account settings" }),
   ).toHaveAttribute("href", "/app/settings");
 });
+
+test("privacy controls, local secret blocking, deletion controls, and headers are visible", async ({
+  page,
+  request,
+}) => {
+  test.skip(
+    process.env.ENABLE_DEMO_MODE !== "true",
+    "This privacy UI check uses the isolated fictional workspace.",
+  );
+
+  const response = await request.get("/app/settings");
+  expect(response.headers()["x-content-type-options"]).toBe("nosniff");
+  expect(response.headers()["x-frame-options"]).toBe("DENY");
+
+  await page.goto("/app/settings");
+  await expect(
+    page.getByRole("heading", { name: "AI privacy controls" }),
+  ).toBeVisible();
+  const memory = page.getByRole("switch", { name: "Previous consultations" });
+  await expect(memory).toHaveAttribute("aria-checked", "true");
+  await memory.click();
+  await expect(memory).toHaveAttribute("aria-checked", "false");
+  await expect(page.getByText("AI privacy controls saved.")).toBeVisible();
+  await expect(
+    page.getByText(/Self-service deletion is unavailable/),
+  ).toBeVisible();
+
+  await page.goto("/app");
+  const composer = page.getByRole("textbox", {
+    name: "Message your business consultant",
+  });
+  await composer.fill("My payment card is 4111 1111 1111 1111");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(
+    page.getByText(/Please remove payment-card numbers/),
+  ).toBeVisible();
+  await expect(composer).toHaveValue(
+    "My payment card is 4111 1111 1111 1111",
+  );
+
+  page.once("dialog", (dialog) => dialog.accept());
+  const deleteButton = page
+    .getByRole("button", { name: /Delete consultation:/ })
+    .first();
+  await expect(deleteButton).toBeVisible();
+  const deletedName = (await deleteButton.getAttribute("aria-label"))!.replace(
+    "Delete consultation: ",
+    "",
+  );
+  await deleteButton.click();
+  await expect(page.getByText(deletedName, { exact: true })).toBeHidden();
+});

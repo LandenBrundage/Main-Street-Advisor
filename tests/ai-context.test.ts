@@ -3,6 +3,11 @@ import { buildBusinessContext } from "@/lib/ai/context";
 import { requestConsultantResponse } from "@/lib/ai/respond";
 import { fallbackTitle } from "@/lib/ai/title";
 
+const cleanModeration = {
+  input: { type: "moderation_result", flagged: false, categories: {} },
+  output: { type: "moderation_result", flagged: false, categories: {} },
+};
+
 describe("AI context and request construction", () => {
   it("includes populated saved profile fields and excludes empty/internal fields", () => {
     const context = buildBusinessContext({
@@ -25,7 +30,11 @@ describe("AI context and request construction", () => {
   it("sends different user questions as different Responses API inputs", async () => {
     const create = vi
       .fn()
-      .mockResolvedValue({ output: [], output_text: "answer" });
+      .mockResolvedValue({
+        output: [],
+        output_text: "answer",
+        moderation: cleanModeration,
+      });
     const openai = { responses: { create } } as never;
     await requestConsultantResponse({
       openai,
@@ -49,6 +58,34 @@ describe("AI context and request construction", () => {
     expect(create.mock.calls[0][0].instructions).toContain(
       "Business name: Test",
     );
+    expect(create.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        store: false,
+        safety_identifier: "local-test-safety-id",
+        max_output_tokens: 3000,
+        moderation: expect.objectContaining({ model: "omni-moderation-latest" }),
+      }),
+    );
+  });
+
+  it("removes action tools when moderation marks a request for answer-only handling", async () => {
+    const create = vi.fn().mockResolvedValue({
+      output: [],
+      output_text: "I can discuss this safely without creating actions.",
+      moderation: cleanModeration,
+    });
+    await requestConsultantResponse({
+      openai: { responses: { create } } as never,
+      model: "test-model",
+      context: "Current workspace",
+      messages: [{ role: "user", content: "Sensitive workplace discussion" }],
+      allowActionTools: false,
+    });
+    const names = create.mock.calls[0][0].tools.flatMap((tool: { name?: string }) =>
+      tool.name ? [tool.name] : [],
+    );
+    expect(names).not.toContain("create_task_plan");
+    expect(names).not.toContain("propose_task_completion");
   });
 
   it("executes an approved retrieval tool and returns its output to the model", async () => {
@@ -56,6 +93,7 @@ describe("AI context and request construction", () => {
       .fn()
       .mockResolvedValueOnce({
         output_text: "",
+        moderation: cleanModeration,
         output: [
           {
             type: "function_call",
@@ -75,6 +113,7 @@ describe("AI context and request construction", () => {
       .mockResolvedValueOnce({
         output: [],
         output_text: "Your measurement task is still in progress.",
+        moderation: cleanModeration,
       });
     const executeRetrieval = vi
       .fn()

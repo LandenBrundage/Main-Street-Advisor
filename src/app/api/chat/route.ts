@@ -6,7 +6,15 @@ import {
   createSupabaseContextSource,
 } from "@/lib/ai/context-builder";
 import { runDemoAIConsultation } from "@/lib/ai/demo-consultation";
-import { createRetrievalExecutor } from "@/lib/ai/retrieval-tools";
+import {
+  createRetrievalExecutor,
+  privacyScopedRetrievalToolNames,
+} from "@/lib/ai/retrieval-tools";
+import {
+  moderateUserMessage,
+  ModerationBlockedError,
+  ModerationUnavailableError,
+} from "@/lib/ai/moderation";
 import { requestConsultantResponse } from "@/lib/ai/respond";
 import { maybeSummarizeConversation } from "@/lib/ai/summary";
 import { validateTaskPlan } from "@/lib/ai/tools";
@@ -19,9 +27,22 @@ import {
 } from "@/lib/config";
 import {
   generateDemoConsultation,
+  getDemoAIPrivacySettings,
   getDemoConversation,
+  getDemoWorkspace,
 } from "@/lib/demo-store";
-import { apiError, AppError, rateLimit, safeDiagnostic } from "@/lib/http";
+import {
+  apiError,
+  AppError,
+  consumeDurableRateLimit,
+  rateLimit,
+  safeDiagnostic,
+} from "@/lib/http";
+import {
+  createSafetyIdentifier,
+  detectHighRiskSecret,
+  type AIPrivacySettings,
+} from "@/lib/privacy";
 import { requireWorkspace } from "@/lib/supabase/server";
 import { taskCompletionProposalSchema } from "@/lib/schemas";
 
@@ -33,6 +54,12 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = bodySchema.parse(await request.json());
+    if (detectHighRiskSecret(body.message))
+      throw new AppError(
+        "SENSITIVE_DATA_DETECTED",
+        "Please remove payment-card numbers, Social Security numbers, private keys, or API keys before sending this message.",
+        422,
+      );
     if (ENABLE_DEMO_MODE) {
       if (body.conversationId && !getDemoConversation(body.conversationId))
         throw new AppError(
@@ -53,11 +80,18 @@ export async function POST(request: Request) {
             "You’ve sent several demo requests quickly. Please wait a minute and try again.",
             429,
           );
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const moderation = await moderateUserMessage(openai, body.message);
+        if (moderation.blocked) throw new ModerationBlockedError("input");
+        const { user } = getDemoWorkspace();
         const result = await runDemoAIConsultation({
-          openai: new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
+          openai,
           model: OPENAI_MODEL,
           message: body.message,
           conversationId: body.conversationId,
+          privacySettings: getDemoAIPrivacySettings(),
+          safetyIdentifier: await createSafetyIdentifier(user.id),
+          allowActionTools: !moderation.flagged,
           onTitleError: (error) =>
             safeDiagnostic("demo-conversation-title", error),
         });
@@ -81,7 +115,7 @@ export async function POST(request: Request) {
       });
     }
     const { supabase, user, businessId } = await requireWorkspace();
-    if (!rateLimit(`${user.id}:chat`))
+    if (!(await consumeDurableRateLimit(supabase, "chat", 20, 60)))
       throw new AppError(
         "RATE_LIMITED",
         "You’ve sent several requests quickly. Please wait a minute and try again.",
@@ -93,6 +127,38 @@ export async function POST(request: Request) {
         "The AI consultant has not been configured. Add OPENAI_API_KEY to the server environment.",
         503,
       );
+
+    const openai = ENABLE_AI_MOCKS
+      ? null
+      : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const safetyIdentifier = await createSafetyIdentifier(user.id);
+    let moderationFlagged = false;
+    if (openai) {
+      const moderation = await moderateUserMessage(openai, body.message);
+      if (moderation.blocked) throw new ModerationBlockedError("input");
+      moderationFlagged = moderation.flagged;
+    }
+    const { data: privacyRow, error: privacyError } = await supabase
+      .from("businesses")
+      .select(
+        "ai_workspace_context_enabled,ai_cross_conversation_enabled,ai_document_search_enabled",
+      )
+      .eq("id", businessId)
+      .single();
+    if (privacyError || !privacyRow)
+      throw new AppError(
+        "PRIVACY_SETTINGS_UNAVAILABLE",
+        "AI privacy controls are unavailable. Apply the latest database migration and try again.",
+        503,
+      );
+    const privacySettings: AIPrivacySettings = {
+      workspaceContextEnabled: privacyRow.ai_workspace_context_enabled,
+      crossConversationEnabled: privacyRow.ai_cross_conversation_enabled,
+      documentSearchEnabled: privacyRow.ai_document_search_enabled,
+    };
+    const allowedRetrievalToolNames = privacyScopedRetrievalToolNames(
+      privacySettings,
+    );
 
     let conversationId = body.conversationId;
     let isNew = false;
@@ -146,9 +212,6 @@ export async function POST(request: Request) {
         "Your message could not be saved. Please try again.",
       );
 
-    const openai = ENABLE_AI_MOCKS
-      ? null
-      : new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     if (openai) {
       try {
         await maybeSummarizeConversation({
@@ -157,6 +220,7 @@ export async function POST(request: Request) {
           supabase,
           businessId,
           conversationId: activeConversationId,
+          safetyIdentifier,
         });
       } catch (summaryError) {
         safeDiagnostic("conversation-summary", summaryError);
@@ -165,15 +229,18 @@ export async function POST(request: Request) {
     const context = await buildAIContext({
       source: createSupabaseContextSource({ supabase, businessId }),
       conversationId: activeConversationId,
+      privacySettings,
     });
-    const { data: document } = await supabase
-      .from("documents")
-      .select("vector_store_id")
-      .eq("business_id", businessId)
-      .eq("status", "ready")
-      .not("vector_store_id", "is", null)
-      .limit(1)
-      .maybeSingle();
+    const { data: document } = privacySettings.documentSearchEnabled
+      ? await supabase
+          .from("documents")
+          .select("vector_store_id")
+          .eq("business_id", businessId)
+          .eq("status", "ready")
+          .not("vector_store_id", "is", null)
+          .limit(1)
+          .maybeSingle()
+      : { data: null };
 
     const response = ENABLE_AI_MOCKS
       ? mockResponse(body.message)
@@ -183,11 +250,15 @@ export async function POST(request: Request) {
           context: context.instructionsContext,
           messages: context.messages,
           vectorStoreId: document?.vector_store_id || undefined,
+          safetyIdentifier,
+          allowActionTools: !moderationFlagged,
+          allowedRetrievalToolNames,
           executeRetrieval: createRetrievalExecutor({
             supabase,
             businessId,
             currentConversationId: activeConversationId,
             recentCompletedCount: context.diagnostics.recentCompletedCount,
+            allowedToolNames: allowedRetrievalToolNames,
           }),
         });
 
@@ -297,7 +368,9 @@ export async function POST(request: Request) {
       }
     }
     const assistantMessage =
-      response.output_text ||
+      (response.moderationBlocked
+        ? "I can’t provide that response safely. Please rephrase the request around a legitimate business, workplace-safety, or risk-management need."
+        : response.output_text) ||
       (proposal
         ? "I prepared an action plan for your approval."
         : "The AI response was empty. Please try again.");
@@ -329,11 +402,10 @@ export async function POST(request: Request) {
     let title: string | undefined;
     if (isNew) {
       title = await createConversationTitle({
-        openai: ENABLE_AI_MOCKS
-          ? null
-          : new OpenAI({ apiKey: process.env.OPENAI_API_KEY }),
+        openai,
         model: OPENAI_MODEL,
         message: body.message,
+        safetyIdentifier,
         onError: (error) => safeDiagnostic("conversation-title", error),
       });
       await supabase
@@ -357,6 +429,24 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     safeDiagnostic("chat", error);
+    if (error instanceof ModerationBlockedError)
+      return apiError(
+        new AppError(
+          "MESSAGE_BLOCKED",
+          error.side === "input"
+            ? "This message can’t be processed safely. Please rephrase it as a legitimate business or workplace-safety question."
+            : "The generated response was withheld by the app’s safety controls.",
+          422,
+        ),
+      );
+    if (error instanceof ModerationUnavailableError)
+      return apiError(
+        new AppError(
+          "MODERATION_UNAVAILABLE",
+          "The safety check is temporarily unavailable, so the message was not processed. Please try again shortly.",
+          503,
+        ),
+      );
     if (error instanceof OpenAI.APIError)
       return apiError(
         new AppError(
@@ -383,6 +473,7 @@ function mockResponse(message: string): Pick<
   "output" | "output_text"
 > & {
   actionCalls: [];
+  moderationBlocked?: "output";
 } {
   return {
     output: [],

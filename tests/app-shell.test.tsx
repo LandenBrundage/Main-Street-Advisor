@@ -1,5 +1,12 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppShell } from "@/components/app-shell";
 
@@ -8,7 +15,10 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
 }));
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("account navigation", () => {
   it("keeps Settings out of primary navigation and links the account control", () => {
@@ -56,5 +66,39 @@ describe("account navigation", () => {
         /Real AI is active\. Messages use your OpenAI API credits\./,
       ),
     ).toBeTruthy();
+  });
+
+  it("removes a consultation only after explicit confirmation", async () => {
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({ ok: true } as Response),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <AppShell
+        user={{ name: "Avery Owner", email: "avery@example.com" }}
+        initialConversations={[
+          {
+            id: "11111111-1111-4111-8111-111111111111",
+            title: "Private pricing review",
+            updated_at: "2026-08-20",
+          },
+        ]}
+      >
+        <div>Page content</div>
+      </AppShell>,
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Delete consultation: Private pricing review",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("Private pricing review")).toBeNull(),
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/conversations/11111111-1111-4111-8111-111111111111",
+      { method: "DELETE" },
+    );
   });
 });

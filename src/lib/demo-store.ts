@@ -11,6 +11,10 @@ import {
   type ProfileInput,
   type TaskPlan,
 } from "@/lib/schemas";
+import {
+  DEFAULT_AI_PRIVACY_SETTINGS,
+  type AIPrivacySettings,
+} from "@/lib/privacy";
 
 type DemoUser = {
   id: string;
@@ -44,6 +48,9 @@ type DemoBusiness = {
   profile_details?: Record<string, unknown>;
   business_snapshot?: Record<string, unknown>;
   primary_goal_id?: string | null;
+  ai_workspace_context_enabled?: boolean;
+  ai_cross_conversation_enabled?: boolean;
+  ai_document_search_enabled?: boolean;
 };
 
 type DemoProfile = {
@@ -218,6 +225,29 @@ export function saveDemoAccountName(name: string) {
   getDemoState().profile.full_name = name;
 }
 
+export function getDemoAIPrivacySettings(): AIPrivacySettings {
+  const business = getDemoState().business;
+  return {
+    workspaceContextEnabled:
+      business.ai_workspace_context_enabled ??
+      DEFAULT_AI_PRIVACY_SETTINGS.workspaceContextEnabled,
+    crossConversationEnabled:
+      business.ai_cross_conversation_enabled ??
+      DEFAULT_AI_PRIVACY_SETTINGS.crossConversationEnabled,
+    documentSearchEnabled:
+      business.ai_document_search_enabled ??
+      DEFAULT_AI_PRIVACY_SETTINGS.documentSearchEnabled,
+  };
+}
+
+export function saveDemoAIPrivacySettings(settings: AIPrivacySettings) {
+  const business = getDemoState().business;
+  business.ai_workspace_context_enabled = settings.workspaceContextEnabled;
+  business.ai_cross_conversation_enabled = settings.crossConversationEnabled;
+  business.ai_document_search_enabled = settings.documentSearchEnabled;
+  return settings;
+}
+
 export function listDemoConversations() {
   return [...getDemoState().conversations].sort(
     (left, right) =>
@@ -230,6 +260,21 @@ export function getDemoConversation(id: string) {
   return getDemoState().conversations.find(
     (conversation) => conversation.id === id,
   );
+}
+
+export function deleteDemoConversation(id: string) {
+  const state = getDemoState();
+  const exists = state.conversations.some((item) => item.id === id);
+  if (!exists) return false;
+  state.conversations = state.conversations.filter((item) => item.id !== id);
+  state.messages = state.messages.filter((item) => item.conversation_id !== id);
+  state.proposals = state.proposals.filter(
+    (item) => item.conversation_id !== id,
+  );
+  state.completionRequests = state.completionRequests.filter(
+    (item) => item.conversation_id !== id,
+  );
+  return true;
 }
 
 export function listDemoConversationMessages(id: string) {

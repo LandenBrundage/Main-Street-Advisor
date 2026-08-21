@@ -29,7 +29,7 @@ For a no-cost scripted demo, run `npm run dev:demo:offline` instead. Both demo v
 ## Supabase
 
 1. Create a project and copy its URL and anon/publishable key to `.env.local`.
-2. Install the Supabase CLI, link the project, then run `supabase db push`. If you use the SQL editor instead, run every file in `supabase/migrations` in filename order. Do not skip the goals repair, memory/profile/settings, or `202607140001_completion_workflows.sql` migration.
+2. Install the Supabase CLI, link the project, then run `supabase db push`. If you use the SQL editor instead, run every file in `supabase/migrations` in filename order. Do not skip the goals repair, memory/profile/settings, completion-workflow, or `202608200001_privacy_controls.sql` migration.
 3. The migrations create tables, indexes, transactional functions, RLS policies, the private `business-documents` bucket, and the private `profile-avatars` bucket. RLS uses the authenticated user's `business_memberships`; server routes repeat workspace-scoped filters.
 4. In Authentication → URL Configuration, add `http://localhost:3000/auth/callback` for development and the equivalent production callback.
 5. In Authentication → Providers → Google, enable Google and enter the OAuth client credentials. Add Supabase's callback URL shown there to the Google Cloud OAuth client.
@@ -46,6 +46,8 @@ Email/password sign-up may require email confirmation depending on the project's
 ## OpenAI
 
 Set `OPENAI_API_KEY` only on the server. `OPENAI_MODEL` defaults to `gpt-5.4-mini` and can be changed without editing code. The chat route uses the Responses API, strict confirmation-only action tools, bounded retrieval tools, and hosted file search when the workspace has a vector store. Spreadsheet uploads are converted to labeled visible-cell text before indexing. OpenAI and vector-store IDs are stored in protected database rows and never sent to the browser.
+
+Before production, set a unique `AI_SAFETY_IDENTIFIER_SECRET` of at least 32 random characters. Full self-service account deletion also requires `SUPABASE_SERVICE_ROLE_KEY` as a server-only deployment secret; it is used only by the deletion route and must never use a `NEXT_PUBLIC_` prefix. Set `NEXT_PUBLIC_PRIVACY_SUPPORT_EMAIL` to show the privacy/safety reporting link.
 
 The memory settings in `.env.example` control how many recent messages and prior summaries are included. Complete profile, goal, task, and conversation records stay in Supabase. Every request includes only a compact business snapshot, the current incomplete primary goal, relevant open tasks, the current rolling summary, a bounded recent-message window, and at most the ten most recently completed goals and tasks combined. Older completed work remains stored in Supabase but falls out of the working context. The model can request additional workspace-scoped sections through validated server tools. Summaries preserve separate labels for confirmed facts, recommendations, actions actually tried, and confirmed results.
 

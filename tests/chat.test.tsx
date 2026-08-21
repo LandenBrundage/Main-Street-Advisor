@@ -20,6 +20,37 @@ afterEach(() => {
 });
 
 describe("persistent conversations", () => {
+  it("removes an unsaved blocked message and leaves it available to edit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        response(
+          {
+            code: "SENSITIVE_DATA_DETECTED",
+            error: "Remove the payment-card number before sending.",
+          },
+          false,
+        ),
+      ),
+    );
+    render(<Chat />);
+    const input = screen.getByLabelText("Message your business consultant");
+    fireEvent.change(input, {
+      target: { value: "My card is 4111 1111 1111 1111" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await screen.findByText("Remove the payment-card number before sending.");
+    expect(
+      screen.queryByText("My card is 4111 1111 1111 1111", {
+        selector: "span",
+      }),
+    ).toBeNull();
+    expect((input as HTMLTextAreaElement).value).toBe(
+      "My card is 4111 1111 1111 1111",
+    );
+    expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
+  });
+
   it("loads the selected conversation and keeps additional messages on the same ID", async () => {
     const id = "11111111-1111-4111-8111-111111111111";
     const fetchMock = vi

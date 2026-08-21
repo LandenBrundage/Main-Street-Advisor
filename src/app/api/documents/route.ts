@@ -11,6 +11,8 @@ import {
   listDemoDocuments,
 } from "@/lib/demo-store";
 import { apiError, safeDiagnostic } from "@/lib/http";
+import { AppError, consumeDurableRateLimit } from "@/lib/http";
+import { hasValidUploadSignature } from "@/lib/file-security";
 import { requireWorkspace } from "@/lib/supabase/server";
 import { spreadsheetToText } from "@/lib/spreadsheet";
 export const runtime = "nodejs";
@@ -55,6 +57,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ document }, { status: 201 });
     }
     const { supabase, businessId, user } = await requireWorkspace();
+    if (!(await consumeDurableRateLimit(supabase, "document-upload", 30, 3600)))
+      throw new AppError(
+        "RATE_LIMITED",
+        "Several documents were uploaded recently. Please wait before uploading more.",
+        429,
+      );
     const form = await request.formData(),
       file = form.get("file");
     if (!(file instanceof File))
@@ -73,6 +81,12 @@ export async function POST(request: Request) {
     const id = crypto.randomUUID(),
       path = `${businessId}/${id}/${safe}`;
     const bytes = await file.arrayBuffer();
+    if (!hasValidUploadSignature({ name: file.name, mimeType: file.type, bytes }))
+      throw new AppError(
+        "INVALID_FILE_CONTENT",
+        "The file contents do not match the selected PDF, TXT, CSV, XLSX, or DOCX type.",
+        400,
+      );
     const { error: uploadError } = await supabase.storage
       .from("business-documents")
       .upload(path, bytes, { contentType: file.type, upsert: false });
@@ -91,7 +105,10 @@ export async function POST(request: Request) {
       })
       .select("id,name,mime_type,size_bytes,status,created_at")
       .single();
-    if (error) throw error;
+    if (error) {
+      await supabase.storage.from("business-documents").remove([path]);
+      throw error;
+    }
     if (!process.env.OPENAI_API_KEY) {
       await supabase
         .from("documents")
@@ -107,6 +124,8 @@ export async function POST(request: Request) {
         { status: 201 },
       );
     }
+    let uploadedFileId: string | undefined;
+    let createdVectorStoreId: string | undefined;
     try {
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
       const { data: business } = await supabase
@@ -120,6 +139,7 @@ export async function POST(request: Request) {
           name: `Business workspace ${businessId}`,
         });
         vectorStoreId = store.id;
+        createdVectorStoreId = store.id;
         await supabase
           .from("businesses")
           .update({ vector_store_id: vectorStoreId })
@@ -140,6 +160,7 @@ export async function POST(request: Request) {
         }),
         purpose: "assistants",
       });
+      uploadedFileId = uploaded.id;
       await openai.vectorStores.files.create(vectorStoreId, {
         file_id: uploaded.id,
       });
@@ -157,6 +178,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ document: ready }, { status: 201 });
     } catch (processingError) {
       safeDiagnostic("document-indexing", processingError);
+      if (uploadedFileId)
+        await new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+          .files.delete(uploadedFileId)
+          .catch(() => {});
+      if (createdVectorStoreId) {
+        await new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+          .vectorStores.delete(createdVectorStoreId)
+          .catch(() => {});
+        await supabase
+          .from("businesses")
+          .update({ vector_store_id: null })
+          .eq("id", businessId)
+          .eq("vector_store_id", createdVectorStoreId);
+      }
       await supabase
         .from("documents")
         .update({ status: "failed" })
@@ -195,28 +230,67 @@ export async function DELETE(request: Request) {
       .eq("business_id", businessId)
       .single();
     if (error) throw error;
+    let deletedLastVectorStoreId: string | null = null;
     if (process.env.OPENAI_API_KEY && data.openai_file_id) {
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-      if (data.vector_store_id)
-        await openai.vectorStores.files
-          .delete(data.openai_file_id, {
-            vector_store_id: data.vector_store_id,
-          })
-          .catch(() => {});
-      await openai.files.delete(data.openai_file_id).catch(() => {});
+      const { count } = await supabase
+        .from("documents")
+        .select("id", { count: "exact", head: true })
+        .eq("business_id", businessId)
+        .neq("id", id);
+      const deletingLastDocument = count === 0;
+      if (data.vector_store_id && deletingLastDocument)
+        await ignoreMissing(() =>
+          openai.vectorStores.delete(data.vector_store_id!),
+        );
+      else if (data.vector_store_id)
+        await ignoreMissing(() =>
+          openai.vectorStores.files.delete(data.openai_file_id!, {
+            vector_store_id: data.vector_store_id!,
+          }),
+        );
+      await ignoreMissing(() => openai.files.delete(data.openai_file_id!));
+      if (deletingLastDocument)
+        deletedLastVectorStoreId = data.vector_store_id;
+    } else if (data.openai_file_id) {
+      throw new AppError(
+        "OPENAI_DELETE_NOT_CONFIGURED",
+        "OpenAI cleanup is unavailable, so the document was not deleted. Restore the server key and try again.",
+        503,
+      );
     }
-    await supabase.storage
+    const { error: storageError } = await supabase.storage
       .from("business-documents")
       .remove([data.storage_path]);
+    if (storageError)
+      throw new AppError(
+        "DOCUMENT_DELETE_FAILED",
+        "The stored file could not be deleted completely. Please try again.",
+      );
     const { error: deleteError } = await supabase
       .from("documents")
       .delete()
       .eq("id", id)
       .eq("business_id", businessId);
     if (deleteError) throw deleteError;
+    if (deletedLastVectorStoreId)
+      await supabase
+        .from("businesses")
+        .update({ vector_store_id: null })
+        .eq("id", businessId)
+        .eq("vector_store_id", deletedLastVectorStoreId);
     return new NextResponse(null, { status: 204 });
   } catch (e) {
     safeDiagnostic("document-delete", e);
     return apiError(e);
+  }
+}
+
+async function ignoreMissing<T>(action: () => Promise<T>) {
+  try {
+    await action();
+  } catch (error) {
+    if (error instanceof OpenAI.APIError && error.status === 404) return;
+    throw error;
   }
 }

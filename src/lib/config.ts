@@ -5,6 +5,8 @@ export const BRAND_TRUST_BLUE = "#003CA2";
 export const PRODUCT_DESCRIPTION =
   "Practical AI consulting and action planning for small businesses.";
 export const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+export const OPENAI_MODERATION_MODEL =
+  process.env.OPENAI_MODERATION_MODEL || "omni-moderation-latest";
 export const ENABLE_AI_MOCKS =
   process.env.NODE_ENV !== "production" &&
   process.env.ENABLE_AI_MOCKS === "true";
@@ -33,6 +35,12 @@ export const AI_PREVIOUS_SUMMARY_LIMIT = positiveInteger(
   process.env.AI_PREVIOUS_SUMMARY_LIMIT,
   3,
 );
+export const AI_MAX_OUTPUT_TOKENS = positiveInteger(
+  process.env.AI_MAX_OUTPUT_TOKENS,
+  3000,
+);
+export const PRIVACY_SUPPORT_EMAIL =
+  process.env.NEXT_PUBLIC_PRIVACY_SUPPORT_EMAIL || "";
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 export const ACCEPTED_FILE_TYPES = [
   "application/pdf",

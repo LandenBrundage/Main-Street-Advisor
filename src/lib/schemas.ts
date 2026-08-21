@@ -205,6 +205,16 @@ export const accountNameSchema = z.object({
   name: z.string().trim().min(1, "A name is required").max(100),
 });
 
+export const aiPrivacySettingsSchema = z.object({
+  workspaceContextEnabled: z.boolean(),
+  crossConversationEnabled: z.boolean(),
+  documentSearchEnabled: z.boolean(),
+});
+
+export const accountDeletionSchema = z.object({
+  confirmation: z.string().trim().min(1).max(240),
+});
+
 export type TaskInput = z.infer<typeof taskSchema>;
 export type GoalInput = z.infer<typeof goalSchema>;
 export type TaskPlan = z.infer<typeof taskPlanSchema>;

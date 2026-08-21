@@ -1,5 +1,6 @@
 import "server-only";
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 export async function createClient() {
   const store = await cookies();
@@ -41,4 +42,14 @@ export async function requireWorkspace() {
     .single();
   if (error || !data) throw new Error("WORKSPACE_REQUIRED");
   return { supabase, user, businessId: data.business_id, membership: data };
+}
+
+export function createAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceRoleKey)
+    throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
+  return createSupabaseClient(url, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }

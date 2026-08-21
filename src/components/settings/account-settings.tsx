@@ -5,8 +5,11 @@ import { useRouter } from "next/navigation";
 import {
   Camera,
   Check,
+  Database,
   KeyRound,
   Loader2,
+  Mail,
+  ShieldCheck,
   Trash2,
   UserRound,
 } from "lucide-react";
@@ -19,9 +22,20 @@ type SettingsData = {
   avatarUrl: string | null;
   providers: string[];
   isOAuthOnly: boolean;
+  accountDeletion: {
+    configured: boolean;
+    eligible: boolean;
+    businessName: string;
+  };
 };
 
-export function AccountSettings() {
+type PrivacySettings = {
+  workspaceContextEnabled: boolean;
+  crossConversationEnabled: boolean;
+  documentSearchEnabled: boolean;
+};
+
+export function AccountSettings({ supportEmail = "" }: { supportEmail?: string }) {
   const router = useRouter();
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [name, setName] = useState("");
@@ -31,18 +45,35 @@ export function AccountSettings() {
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
+  const [privacy, setPrivacy] = useState<PrivacySettings | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [showDelete, setShowDelete] = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings", { cache: "no-store" })
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok)
-          throw new Error(data.error || "Settings could not be loaded.");
-        return data as SettingsData;
+    Promise.all([
+      fetch("/api/settings", { cache: "no-store" }),
+      fetch("/api/settings/privacy", { cache: "no-store" }),
+    ])
+      .then(async ([accountResponse, privacyResponse]) => {
+        const [accountData, privacyData] = await Promise.all([
+          accountResponse.json(),
+          privacyResponse.json(),
+        ]);
+        if (!accountResponse.ok)
+          throw new Error(accountData.error || "Settings could not be loaded.");
+        if (!privacyResponse.ok)
+          throw new Error(
+            privacyData.error || "AI privacy controls could not be loaded.",
+          );
+        return {
+          account: accountData as SettingsData,
+          privacy: privacyData.settings as PrivacySettings,
+        };
       })
-      .then((data) => {
-        setSettings(data);
-        setName(data.name);
+      .then(({ account, privacy }) => {
+        setSettings(account);
+        setName(account.name);
+        setPrivacy(privacy);
       })
       .catch((reason) =>
         setError(
@@ -171,6 +202,66 @@ export function AccountSettings() {
           : "Your password could not be changed.",
       );
     } finally {
+      setBusy("");
+    }
+  }
+
+  async function updatePrivacy(
+    key: keyof PrivacySettings,
+    enabled: boolean,
+  ) {
+    if (!privacy || busy) return;
+    const previous = privacy;
+    const next = { ...privacy, [key]: enabled };
+    setPrivacy(next);
+    setBusy("privacy");
+    setError("");
+    setNotice("");
+    try {
+      const response = await fetch("/api/settings/privacy", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(data.error || "AI privacy controls could not be saved.");
+      setPrivacy(data.settings);
+      setNotice("AI privacy controls saved.");
+    } catch (reason) {
+      setPrivacy(previous);
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "AI privacy controls could not be saved.",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function deleteAccount() {
+    if (!settings?.accountDeletion || busy) return;
+    setBusy("delete");
+    setError("");
+    try {
+      const response = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ confirmation: deleteConfirmation }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "The account could not be deleted.");
+      }
+      await createClient().auth.signOut();
+      window.location.assign("/sign-in?deleted=1");
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "The account could not be deleted.",
+      );
       setBusy("");
     }
   }
@@ -358,7 +449,177 @@ export function AccountSettings() {
             {settings?.isOAuthOnly ? "Set password" : "Change password"}
           </button>
         </section>
+
+        <section className="card p-5 sm:p-6">
+          <div className="flex items-center gap-2">
+            <ShieldCheck className="size-5 text-blue-600" />
+            <h2 className="text-lg font-semibold text-slate-950">
+              AI privacy controls
+            </h2>
+          </div>
+          <p className="mt-1 text-sm leading-6 text-slate-500">
+            Your current consultation is always sent for a response. Choose which
+            additional workspace sources the consultant may use.
+          </p>
+          <div className="mt-5 divide-y divide-slate-100">
+            <PrivacyToggle
+              label="Business profile, goals, and tasks"
+              description="Personalizes advice with the workspace’s current operating context."
+              checked={privacy?.workspaceContextEnabled ?? true}
+              disabled={!privacy || Boolean(busy)}
+              onChange={(checked) =>
+                updatePrivacy("workspaceContextEnabled", checked)
+              }
+            />
+            <PrivacyToggle
+              label="Previous consultations"
+              description="Allows summaries and details from other consultations to inform new answers."
+              checked={privacy?.crossConversationEnabled ?? true}
+              disabled={!privacy || Boolean(busy)}
+              onChange={(checked) =>
+                updatePrivacy("crossConversationEnabled", checked)
+              }
+            />
+            <PrivacyToggle
+              label="Uploaded document search"
+              description="Allows the consultant to search documents indexed for this workspace."
+              checked={privacy?.documentSearchEnabled ?? true}
+              disabled={!privacy || Boolean(busy)}
+              onChange={(checked) =>
+                updatePrivacy("documentSearchEnabled", checked)
+              }
+            />
+          </div>
+        </section>
+
+        <section className="card p-5 sm:p-6">
+          <div className="flex items-center gap-2">
+            <Database className="size-5 text-blue-600" />
+            <h2 className="text-lg font-semibold text-slate-950">
+              Privacy and data
+            </h2>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Messages and enabled workspace context are processed by OpenAI to
+            produce consulting responses. Avoid submitting passwords, full Social
+            Security numbers, payment-card details, or information you do not need
+            for the consultation.
+          </p>
+          {supportEmail && (
+            <a
+              className="btn-secondary mt-4 inline-flex"
+              href={`mailto:${supportEmail}?subject=Main%20Street%20Advisor%20privacy%20or%20safety%20report`}
+            >
+              <Mail className="size-4" /> Report a privacy or safety issue
+            </a>
+          )}
+        </section>
+
+        <section className="rounded-xl border border-red-200 bg-red-50/40 p-5 sm:p-6">
+          <div className="flex items-center gap-2">
+            <Trash2 className="size-5 text-red-700" />
+            <h2 className="text-lg font-semibold text-red-950">Delete account</h2>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-red-900/80">
+            Permanently removes the active workspace, consultations, stored files,
+            OpenAI search files, profile picture, and sign-in account. Provider
+            backups may expire on their own retention schedule.
+          </p>
+          {!settings?.accountDeletion.configured ||
+          !settings.accountDeletion.eligible ? (
+            <p className="mt-3 text-sm text-red-800">
+              Self-service deletion is unavailable for this workspace. Contact the
+              administrator for assisted deletion.
+            </p>
+          ) : !showDelete ? (
+            <button
+              className="btn-secondary mt-4 border-red-300 text-red-800 hover:bg-red-100"
+              onClick={() => setShowDelete(true)}
+            >
+              Delete account and workspace
+            </button>
+          ) : (
+            <div className="mt-4 rounded-lg border border-red-200 bg-white p-4">
+              <label>
+                <span className="label text-red-950">
+                  Enter {settings.accountDeletion.businessName} to confirm
+                </span>
+                <input
+                  className="field mt-1"
+                  value={deleteConfirmation}
+                  onChange={(event) => setDeleteConfirmation(event.target.value)}
+                  autoComplete="off"
+                />
+              </label>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  className="btn-primary bg-red-700 hover:bg-red-800"
+                  disabled={
+                    busy === "delete" ||
+                    deleteConfirmation !== settings.accountDeletion.businessName
+                  }
+                  onClick={deleteAccount}
+                >
+                  {busy === "delete" && (
+                    <Loader2 className="size-4 animate-spin" />
+                  )}
+                  Permanently delete everything
+                </button>
+                <button
+                  className="btn-ghost"
+                  disabled={busy === "delete"}
+                  onClick={() => {
+                    setShowDelete(false);
+                    setDeleteConfirmation("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </section>
       </div>
+    </div>
+  );
+}
+
+function PrivacyToggle({
+  label,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-slate-900">{label}</p>
+        <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+          checked ? "bg-blue-600" : "bg-slate-300"
+        } disabled:opacity-50`}
+      >
+        <span
+          className={`absolute top-0.5 size-5 rounded-full bg-white shadow transition ${
+            checked ? "left-[22px]" : "left-0.5"
+          }`}
+        />
+      </button>
     </div>
   );
 }

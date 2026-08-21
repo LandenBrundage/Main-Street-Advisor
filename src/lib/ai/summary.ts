@@ -9,6 +9,10 @@ import {
   conversationSummarySchema,
   type ConversationSummary,
 } from "@/lib/schemas";
+import {
+  enforceResponseModeration,
+  responseModerationConfig,
+} from "@/lib/ai/moderation";
 
 type SummaryMessage = {
   id: string;
@@ -49,12 +53,14 @@ export async function maybeSummarizeConversation({
   supabase,
   businessId,
   conversationId,
+  safetyIdentifier,
 }: {
   openai: OpenAI;
   model: string;
   supabase: SupabaseClient;
   businessId: string;
   conversationId: string;
+  safetyIdentifier: string;
 }) {
   const { data: conversation, error: conversationError } = await supabase
     .from("conversations")
@@ -89,6 +95,7 @@ export async function maybeSummarizeConversation({
     model,
     previous,
     messages: batch,
+    safetyIdentifier,
   });
   const throughCount = summarizedCount + batch.length;
   const boundary = batch.at(-1)!;
@@ -114,11 +121,13 @@ async function summarizeMessages({
   model,
   previous,
   messages,
+  safetyIdentifier,
 }: {
   openai: OpenAI;
   model: string;
   previous: ConversationSummary;
   messages: SummaryMessage[];
+  safetyIdentifier: string;
 }) {
   const response = await openai.responses.create({
     model,
@@ -159,7 +168,10 @@ async function summarizeMessages({
       },
     },
     max_output_tokens: 1600,
+    moderation: responseModerationConfig,
+    safety_identifier: safetyIdentifier,
     store: false,
   });
+  enforceResponseModeration(response);
   return conversationSummarySchema.parse(JSON.parse(response.output_text));
 }

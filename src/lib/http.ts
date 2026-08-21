@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export class AppError extends Error {
   constructor(
@@ -11,11 +12,20 @@ export class AppError extends Error {
   }
 }
 export function safeDiagnostic(scope: string, error: unknown) {
+  const details =
+    error instanceof AppError
+      ? { name: error.name, code: error.code, status: error.status }
+      : error instanceof Error
+        ? {
+            name: error.name,
+            ...(process.env.NODE_ENV === "production"
+              ? {}
+              : { message: error.message }),
+          }
+        : { name: "UnknownError" };
   console.error(
     `[${scope}]`,
-    error instanceof Error
-      ? { name: error.name, message: error.message }
-      : { message: "Unknown error" },
+    details,
   );
 }
 export function apiError(error: unknown, fallbackStatus = 500) {
@@ -71,4 +81,19 @@ export function rateLimit(key: string, limit = 20, windowMs = 60_000) {
   if (entry.count >= limit) return false;
   entry.count++;
   return true;
+}
+
+export async function consumeDurableRateLimit(
+  supabase: SupabaseClient,
+  scope: string,
+  limit: number,
+  windowSeconds: number,
+) {
+  const { data, error } = await supabase.rpc("consume_api_rate_limit", {
+    p_scope: scope,
+    p_limit: limit,
+    p_window_seconds: windowSeconds,
+  });
+  if (error) throw new Error("RATE_LIMIT_CHECK_FAILED");
+  return data === true;
 }

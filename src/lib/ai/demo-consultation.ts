@@ -6,6 +6,9 @@ import {
 } from "@/lib/ai/demo-runtime";
 import { requestConsultantResponse } from "@/lib/ai/respond";
 import { createConversationTitle } from "@/lib/ai/title";
+import { privacyScopedRetrievalToolNames } from "@/lib/ai/retrieval-tools";
+import type { AIPrivacySettings } from "@/lib/privacy";
+import { DEFAULT_AI_PRIVACY_SETTINGS } from "@/lib/privacy";
 import { validateTaskPlan } from "@/lib/ai/tools";
 import {
   addDemoMessage,
@@ -25,12 +28,18 @@ export async function runDemoAIConsultation({
   message,
   conversationId,
   onTitleError,
+  privacySettings = DEFAULT_AI_PRIVACY_SETTINGS,
+  safetyIdentifier = "local-test-safety-id",
+  allowActionTools = true,
 }: {
   openai: OpenAI;
   model: string;
   message: string;
   conversationId?: string;
   onTitleError?: (error: unknown) => void;
+  privacySettings?: AIPrivacySettings;
+  safetyIdentifier?: string;
+  allowActionTools?: boolean;
 }) {
   const existing = conversationId ? getDemoConversation(conversationId) : null;
   if (conversationId && !existing) throw new Error("CONVERSATION_NOT_FOUND");
@@ -45,12 +54,19 @@ export async function runDemoAIConsultation({
   const context = await buildAIContext({
     source: createDemoContextSource(),
     conversationId: conversation.id,
+    privacySettings,
   });
+  const allowedRetrievalToolNames = privacyScopedRetrievalToolNames(
+    privacySettings,
+  );
   const response = await requestConsultantResponse({
     openai,
     model,
     context: context.instructionsContext,
     messages: context.messages,
+    safetyIdentifier,
+    allowActionTools,
+    allowedRetrievalToolNames,
     executeRetrieval: createDemoRetrievalExecutor({
       currentConversationId: conversation.id,
       recentCompletedCount: context.diagnostics.recentCompletedCount,
@@ -99,7 +115,9 @@ export async function runDemoAIConsultation({
   }
 
   const assistantContent =
-    response.output_text ||
+    (response.moderationBlocked
+      ? "I can’t provide that response safely. Please rephrase the request around a legitimate business, workplace-safety, or risk-management need."
+      : response.output_text) ||
     (proposal
       ? "I prepared an action plan for your approval."
       : "The AI response was empty. Please try again.");
@@ -124,6 +142,7 @@ export async function runDemoAIConsultation({
       openai,
       model,
       message,
+      safetyIdentifier,
       onError: onTitleError,
     });
     renameDemoConversation(conversation.id, title);

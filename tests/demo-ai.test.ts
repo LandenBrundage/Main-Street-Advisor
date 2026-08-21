@@ -13,6 +13,11 @@ import {
 } from "@/lib/demo-store";
 import { profileCompletion } from "@/lib/profile";
 
+const cleanModeration = {
+  input: { type: "moderation_result", flagged: false, categories: {} },
+  output: { type: "moderation_result", flagged: false, categories: {} },
+};
+
 beforeEach(() => resetDemoState());
 
 describe("fictional customer demo", () => {
@@ -48,12 +53,14 @@ describe("fictional customer demo", () => {
       .fn()
       .mockResolvedValueOnce({
         output: [],
+        moderation: cleanModeration,
         output_text:
           "Use a margin-safe afternoon bundle and target morning regulars first.",
       })
       .mockResolvedValueOnce({
         output: [],
         output_text: "Afternoon Revenue Strategy",
+        moderation: cleanModeration,
       });
     const question =
       "What should this bakery test next to improve afternoon revenue?";
@@ -105,6 +112,7 @@ describe("fictional customer demo", () => {
       .fn()
       .mockResolvedValueOnce({
         output_text: "",
+        moderation: cleanModeration,
         output: [
           {
             type: "function_call",
@@ -116,12 +124,14 @@ describe("fictional customer demo", () => {
       })
       .mockResolvedValueOnce({
         output: [],
+        moderation: cleanModeration,
         output_text:
           "I prepared the requested task for your approval; nothing has been saved yet.",
       })
       .mockResolvedValueOnce({
         output: [],
         output_text: "Afternoon Bundle Plan",
+        moderation: cleanModeration,
       });
 
     const before = getDemoAIData().tasks.length;
@@ -146,6 +156,7 @@ describe("fictional customer demo", () => {
       .fn()
       .mockResolvedValueOnce({
         output_text: "",
+        moderation: cleanModeration,
         output: [
           {
             type: "function_call",
@@ -161,12 +172,14 @@ describe("fictional customer demo", () => {
       })
       .mockResolvedValueOnce({
         output: [],
+        moderation: cleanModeration,
         output_text:
           "I prepared a confirmation action. The task has not changed yet.",
       })
       .mockResolvedValueOnce({
         output: [],
         output_text: "Task Completion",
+        moderation: cleanModeration,
       });
     const result = await runDemoAIConsultation({
       openai: { responses: { create } } as never,

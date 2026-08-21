@@ -116,10 +116,22 @@ export function Chat({
         body: JSON.stringify({ conversationId, message: clean }),
       });
       const data = await response.json();
-      if (!response.ok)
+      if (!response.ok) {
+        if (
+          ["MESSAGE_BLOCKED", "SENSITIVE_DATA_DETECTED"].includes(data.code)
+        ) {
+          const retained = messagesRef.current.filter(
+            (message) => message.id !== optimistic.id,
+          );
+          messagesRef.current = retained;
+          setMessages(retained);
+          setValue(clean);
+          setLastAttempt("");
+        }
         throw new Error(
           data.error || "The consultant is temporarily unavailable.",
         );
+      }
       const nextMessages = [...messagesRef.current, data.message];
       messagesRef.current = nextMessages;
       setMessages(nextMessages);
@@ -310,7 +322,11 @@ export function Chat({
         )}
         <p className="mt-2 text-center text-[11px] text-slate-400">
           AI can make mistakes. Confirm high-stakes legal, tax, accounting, and
-          financial decisions with a qualified professional.
+          financial decisions with a qualified professional. Avoid entering
+          passwords or government/payment identifiers.{" "}
+          <Link href="/app/settings" className="underline hover:text-slate-600">
+            Manage AI privacy
+          </Link>
         </p>
       </div>
     </div>

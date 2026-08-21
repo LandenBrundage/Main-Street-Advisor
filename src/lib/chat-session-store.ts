@@ -35,3 +35,7 @@ export function cacheChatSession(
     messages: session.messages.map((message) => ({ ...message })),
   });
 }
+
+export function clearCachedChatSession(conversationId: string) {
+  sessions.delete(conversationId);
+}

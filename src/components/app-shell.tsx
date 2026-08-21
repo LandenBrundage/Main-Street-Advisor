@@ -11,12 +11,14 @@ import {
   Settings,
   X,
   MessageSquare,
+  Trash2,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { PRODUCT_NAME } from "@/lib/config";
 import type { ConversationSummary } from "@/lib/domain";
 import { cn, initials } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { clearCachedChatSession } from "@/lib/chat-session-store";
 
 const nav = [
   { href: "/app", label: "Home", icon: Home },
@@ -41,6 +43,7 @@ export function AppShell({
   const [open, setOpen] = useState(false);
   const [conversations, setConversations] = useState(initialConversations);
   const [conversationError, setConversationError] = useState("");
+  const [deletingConversation, setDeletingConversation] = useState("");
   const refreshConversations = useCallback(async () => {
     try {
       const response = await fetch("/api/conversations", { cache: "no-store" });
@@ -57,6 +60,40 @@ export function AppShell({
     return () => window.removeEventListener("conversations:changed", listener);
   }, [refreshConversations]);
   const selectedId = path.match(/^\/app\/conversations\/([^/]+)/)?.[1];
+  const removeConversation = useCallback(
+    async (id: string, title: string) => {
+      if (
+        deletingConversation ||
+        !window.confirm(
+          `Permanently delete “${title}” and its messages? Approved goals and tasks will remain.`,
+        )
+      )
+        return;
+      setDeletingConversation(id);
+      setConversationError("");
+      try {
+        const response = await fetch(`/api/conversations/${id}`, {
+          method: "DELETE",
+        });
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.error || "The consultation could not be deleted.");
+        }
+        setConversations((current) => current.filter((item) => item.id !== id));
+        clearCachedChatSession(id);
+        if (selectedId === id) router.replace("/app");
+      } catch (error) {
+        setConversationError(
+          error instanceof Error
+            ? error.message
+            : "The consultation could not be deleted.",
+        );
+      } finally {
+        setDeletingConversation("");
+      }
+    },
+    [deletingConversation, router, selectedId],
+  );
   const sidebar = (
     <div className="flex h-full flex-col bg-white">
       <div className="flex h-16 items-center gap-2 border-b border-slate-200 px-5 font-semibold">
@@ -109,23 +146,37 @@ export function AppShell({
         {conversations.length ? (
           <div className="space-y-1">
             {conversations.map((conversation) => (
-              <Link
+              <div
                 key={conversation.id}
-                href={`/app/conversations/${conversation.id}`}
-                onClick={() => setOpen(false)}
-                aria-current={
-                  selectedId === conversation.id ? "page" : undefined
-                }
                 className={cn(
-                  "flex items-center gap-2 truncate rounded-lg px-2 py-2 text-sm",
+                  "group flex items-center rounded-lg text-sm",
                   selectedId === conversation.id
                     ? "bg-blue-50 text-blue-700"
                     : "text-slate-600 hover:bg-slate-50",
                 )}
               >
-                <MessageSquare className="size-3.5 shrink-0" />
-                <span className="truncate">{conversation.title}</span>
-              </Link>
+                <Link
+                  href={`/app/conversations/${conversation.id}`}
+                  onClick={() => setOpen(false)}
+                  aria-current={
+                    selectedId === conversation.id ? "page" : undefined
+                  }
+                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2"
+                >
+                  <MessageSquare className="size-3.5 shrink-0" />
+                  <span className="truncate">{conversation.title}</span>
+                </Link>
+                <button
+                  className="mr-1 rounded p-1.5 text-slate-400 opacity-70 hover:bg-red-50 hover:text-red-700 focus:opacity-100 group-hover:opacity-100"
+                  aria-label={`Delete consultation: ${conversation.title}`}
+                  disabled={Boolean(deletingConversation)}
+                  onClick={() =>
+                    removeConversation(conversation.id, conversation.title)
+                  }
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
             ))}
           </div>
         ) : (

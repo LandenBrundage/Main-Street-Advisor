@@ -4,6 +4,10 @@ import {
   AI_RECENT_MESSAGE_LIMIT,
 } from "@/lib/config";
 import { conversationSummarySchema } from "@/lib/schemas";
+import {
+  DEFAULT_AI_PRIVACY_SETTINGS,
+  type AIPrivacySettings,
+} from "@/lib/privacy";
 
 export type ContextMessage = {
   id: string;
@@ -78,27 +82,41 @@ export async function buildAIContext({
   conversationId,
   recentMessageLimit = AI_RECENT_MESSAGE_LIMIT,
   previousSummaryLimit = AI_PREVIOUS_SUMMARY_LIMIT,
+  privacySettings = DEFAULT_AI_PRIVACY_SETTINGS,
 }: {
   source: ContextSource;
   conversationId: string;
   recentMessageLimit?: number;
   previousSummaryLimit?: number;
+  privacySettings?: AIPrivacySettings;
 }): Promise<BuiltAIContext> {
   const [snapshot, primaryGoal, memory, previousSummaries, recentCompleted] =
     await Promise.all([
-      source.getBusinessSnapshot(),
-      source.getPrimaryGoal(),
+      privacySettings.workspaceContextEnabled
+        ? source.getBusinessSnapshot()
+        : Promise.resolve({}),
+      privacySettings.workspaceContextEnabled
+        ? source.getPrimaryGoal()
+        : Promise.resolve(null),
       source.getCurrentConversationMemory(conversationId, recentMessageLimit),
-      source.getPreviousConversationSummaries(
-        conversationId,
-        previousSummaryLimit,
-      ),
-      source.getRecentCompletedItems(10),
+      privacySettings.crossConversationEnabled
+        ? source.getPreviousConversationSummaries(
+            conversationId,
+            previousSummaryLimit,
+          )
+        : Promise.resolve([]),
+      privacySettings.workspaceContextEnabled
+        ? source.getRecentCompletedItems(10)
+        : Promise.resolve([]),
     ]);
-  const activeTasks = await source.getActiveTasks(primaryGoal?.id);
+  const activeTasks = privacySettings.workspaceContextEnabled
+    ? await source.getActiveTasks(primaryGoal?.id)
+    : [];
   const currentSummary = parseSummary(memory.summary);
   const sections = [
-    `Untrusted compact business snapshot:\n${JSON.stringify(snapshot)}`,
+    privacySettings.workspaceContextEnabled
+      ? `Untrusted compact business snapshot:\n${JSON.stringify(snapshot)}`
+      : "Business profile, goals, and task context: disabled by the workspace privacy setting.",
     primaryGoal
       ? `Current primary goal (database record):\n${JSON.stringify(primaryGoal)}`
       : "Current primary goal: none explicitly selected.",
@@ -111,7 +129,9 @@ export async function buildAIContext({
     currentSummary
       ? `Current conversation rolling summary (untrusted memory; preserve confirmation labels):\n${JSON.stringify(currentSummary)}`
       : "Current conversation rolling summary: none yet.",
-    previousSummaries.length
+    !privacySettings.crossConversationEnabled
+      ? "Previous consultation memory: disabled by the workspace privacy setting."
+      : previousSummaries.length
       ? `Recent previous conversation summaries (retrieve details before relying on ambiguity):\n${JSON.stringify(previousSummaries)}`
       : "Recent previous conversation summaries: none.",
   ];

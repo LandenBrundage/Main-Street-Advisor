@@ -163,19 +163,49 @@ export const RETRIEVAL_TOOL_NAMES = new Set(
   ),
 );
 
+export const WORKSPACE_RETRIEVAL_TOOL_NAMES = new Set([
+  "get_business_profile_section",
+  "list_goals",
+  "list_tasks",
+  "get_task",
+]);
+
+export const CROSS_CONVERSATION_RETRIEVAL_TOOL_NAMES = new Set([
+  "list_conversation_summaries",
+  "get_conversation_details",
+]);
+
+export function privacyScopedRetrievalToolNames({
+  workspaceContextEnabled,
+  crossConversationEnabled,
+}: {
+  workspaceContextEnabled: boolean;
+  crossConversationEnabled: boolean;
+}) {
+  return new Set([
+    ...(workspaceContextEnabled ? WORKSPACE_RETRIEVAL_TOOL_NAMES : []),
+    ...(crossConversationEnabled
+      ? CROSS_CONVERSATION_RETRIEVAL_TOOL_NAMES
+      : []),
+  ]);
+}
+
 export function createRetrievalExecutor({
   supabase,
   businessId,
   currentConversationId,
   recentCompletedCount = 0,
+  allowedToolNames = RETRIEVAL_TOOL_NAMES,
 }: {
   supabase: SupabaseClient;
   businessId: string;
   currentConversationId: string;
   recentCompletedCount?: number;
+  allowedToolNames?: ReadonlySet<string>;
 }) {
   let remainingCompletedItems = Math.max(0, 10 - recentCompletedCount);
   return async function execute(name: string, rawArguments: string) {
+    if (!allowedToolNames.has(name)) throw new Error("PRIVACY_DISABLED_TOOL");
     const raw = JSON.parse(rawArguments) as unknown;
     switch (name) {
       case "get_business_profile_section": {

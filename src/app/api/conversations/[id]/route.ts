@@ -3,6 +3,7 @@ import {
   getDemoConversation,
   getDemoPendingActions,
   listDemoConversationMessages,
+  deleteDemoConversation,
 } from "@/lib/demo-store";
 import { ENABLE_DEMO_MODE } from "@/lib/config";
 import { apiError, AppError, safeDiagnostic } from "@/lib/http";
@@ -103,6 +104,69 @@ export async function GET(
     });
   } catch (error) {
     safeDiagnostic("conversation-detail", error);
+    return apiError(error);
+  }
+}
+
+export async function DELETE(
+  _: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    if (ENABLE_DEMO_MODE) {
+      if (!deleteDemoConversation(id))
+        throw new AppError(
+          "CONVERSATION_NOT_FOUND",
+          "That consultation could not be found in this workspace.",
+          404,
+        );
+      return new NextResponse(null, { status: 204 });
+    }
+    const { supabase, businessId } = await requireWorkspace();
+    const { data: conversation, error: lookupError } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("id", id)
+      .eq("business_id", businessId)
+      .maybeSingle();
+    if (lookupError || !conversation)
+      throw new AppError(
+        "CONVERSATION_NOT_FOUND",
+        "That consultation could not be found in this workspace.",
+        404,
+      );
+    const [{ error: actionError }, { error: completionError }] =
+      await Promise.all([
+        supabase
+          .from("ai_action_requests")
+          .delete()
+          .eq("conversation_id", id)
+          .eq("business_id", businessId),
+        supabase
+          .from("task_completion_requests")
+          .delete()
+          .eq("conversation_id", id)
+          .eq("business_id", businessId),
+      ]);
+    if (actionError || completionError)
+      throw new AppError(
+        "CONVERSATION_DELETE_FAILED",
+        "That consultation could not be deleted completely.",
+      );
+    const { error } = await supabase
+      .from("conversations")
+      .delete()
+      .eq("id", id)
+      .eq("business_id", businessId);
+    if (error)
+      throw new AppError(
+        "CONVERSATION_DELETE_FAILED",
+        "That consultation could not be deleted.",
+      );
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    safeDiagnostic("conversation-delete", error);
     return apiError(error);
   }
 }

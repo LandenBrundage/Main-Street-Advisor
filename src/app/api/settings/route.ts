@@ -12,21 +12,34 @@ import { requireUser } from "@/lib/supabase/server";
 export async function GET() {
   try {
     if (ENABLE_DEMO_MODE) {
-      const { user } = getDemoWorkspace();
+      const { user, membership } = getDemoWorkspace();
       return NextResponse.json({
         name: getDemoAccountName(),
         email: user.email,
         avatarUrl: null,
         providers: ["email"],
         isOAuthOnly: false,
+        accountDeletion: {
+          configured: false,
+          eligible: false,
+          businessName: membership.businesses.name,
+        },
       });
     }
     const { supabase, user } = await requireUser();
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("full_name,avatar_path")
-      .eq("id", user.id)
-      .single();
+    const [profileResult, membershipResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("full_name,avatar_path")
+        .eq("id", user.id)
+        .single(),
+      supabase
+        .from("business_memberships")
+        .select("role,businesses(name)")
+        .eq("user_id", user.id)
+        .limit(2),
+    ]);
+    const { data, error } = profileResult;
     if (error || !data)
       throw new AppError(
         "SETTINGS_LOAD_FAILED",
@@ -50,11 +63,25 @@ export async function GET() {
       avatarUrl,
       providers,
       isOAuthOnly: !providers.includes("email"),
+      accountDeletion: {
+        configured: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+        eligible:
+          membershipResult.data?.length === 1 &&
+          membershipResult.data[0]?.role === "owner",
+        businessName:
+          relatedBusinessName(membershipResult.data?.[0]?.businesses) || "",
+      },
     });
   } catch (error) {
     safeDiagnostic("settings-load", error);
     return apiError(error);
   }
+}
+
+function relatedBusinessName(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "";
+  const name = (value as { name?: unknown }).name;
+  return typeof name === "string" ? name : "";
 }
 
 export async function PATCH(request: Request) {

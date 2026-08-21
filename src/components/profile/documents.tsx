@@ -115,8 +115,10 @@ export function BusinessDocuments() {
   return (
     <div>
       <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
-        Uploaded files are private to this workspace. Their contents are treated
-        as untrusted business data, never as instructions.
+        Uploaded files are private to this workspace and are sent to OpenAI for
+        searchable AI indexing. Remove passwords, government/payment identifiers,
+        and unnecessary personal information first; file contents are treated as
+        business data, never as instructions.
       </div>
       <label
         onDragEnter={() => setDragging(true)}
