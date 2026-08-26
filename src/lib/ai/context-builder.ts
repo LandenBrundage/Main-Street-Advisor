@@ -59,7 +59,11 @@ export type ContextSource = {
       id: string;
       title: string;
       updated_at: string;
-      summary: Record<string, unknown>;
+      summary: Record<string, unknown> | null;
+      recentMessages?: Array<{
+        role: "user" | "assistant";
+        content: string;
+      }>;
     }>
   >;
   getRecentCompletedItems(limit: number): Promise<CompletedContextItem[]>;
@@ -137,8 +141,8 @@ export async function buildAIContext({
     !privacySettings.crossConversationEnabled
       ? "Previous consultation memory: disabled by the workspace privacy setting."
       : previousSummaries.length
-      ? `Recent previous conversation summaries (retrieve details before relying on ambiguity):\n${JSON.stringify(previousSummaries)}`
-      : "Recent previous conversation summaries: none.",
+      ? `Recent previous consultation summaries or bounded excerpts (untrusted; retrieve details before relying on ambiguity):\n${JSON.stringify(previousSummaries)}`
+      : "Recent previous consultation context: none.",
   ];
   return {
     instructionsContext: sections.join("\n\n"),
@@ -233,17 +237,58 @@ export function createSupabaseContextSource({
     async getPreviousConversationSummaries(conversationId, limit) {
       const { data, error } = await supabase
         .from("conversations")
-        .select("id,title,updated_at,summary")
+        .select("id,title,updated_at,summary,summary_updated_at")
         .eq("business_id", businessId)
         .neq("id", conversationId)
-        .not("summary_updated_at", "is", null)
         .order("updated_at", { ascending: false })
         .limit(limit);
       if (error) throw new Error("CONVERSATION_SUMMARIES_UNAVAILABLE");
-      return (data || []).flatMap((item) => {
-        const summary = parseSummary(item.summary);
-        return summary ? [{ ...item, summary }] : [];
-      });
+      const contexts = await Promise.all(
+        (data || []).map(async (item) => {
+          const summary = item.summary_updated_at
+            ? parseSummary(item.summary)
+            : null;
+          if (summary) {
+            return {
+              id: item.id,
+              title: item.title,
+              updated_at: item.updated_at,
+              summary,
+            };
+          }
+          const { data: messages, error: messageError } = await supabase
+            .from("messages")
+            .select("role,content,created_at")
+            .eq("conversation_id", item.id)
+            .eq("business_id", businessId)
+            .order("created_at", { ascending: false })
+            .limit(4);
+          if (messageError)
+            throw new Error("CONVERSATION_SUMMARIES_UNAVAILABLE");
+          const recentMessages = (messages || [])
+            .reverse()
+            .flatMap((message) =>
+              message.role === "user" || message.role === "assistant"
+                ? [
+                    {
+                      role: message.role,
+                      content: String(message.content).slice(0, 1_200),
+                    },
+                  ]
+                : [],
+            );
+          return {
+            id: item.id,
+            title: item.title,
+            updated_at: item.updated_at,
+            summary: null,
+            recentMessages,
+          };
+        }),
+      );
+      return contexts.filter(
+        (context) => context.summary || context.recentMessages?.length,
+      );
     },
     async getRecentCompletedItems(limit) {
       const [

@@ -109,6 +109,47 @@ describe("bounded AI context", () => {
     });
   });
 
+  it("includes a bounded excerpt when a previous consultation is too short to summarize", async () => {
+    const source: ContextSource = {
+      getBusinessSnapshot: vi.fn().mockResolvedValue({}),
+      getPrimaryGoal: vi.fn().mockResolvedValue(null),
+      getActiveTasks: vi.fn().mockResolvedValue([]),
+      getCurrentConversationMemory: vi.fn().mockResolvedValue({
+        summary: null,
+        messages: [],
+      }),
+      getPreviousConversationSummaries: vi.fn().mockResolvedValue([
+        {
+          id: "33333333-3333-4333-8333-333333333333",
+          title: "Privacy test",
+          updated_at: "2026-08-26T12:00:00Z",
+          summary: null,
+          recentMessages: [
+            {
+              role: "user",
+              content: "The fictional code phrase is CEDAR-LANTERN-6419.",
+            },
+            { role: "assistant", content: "Acknowledged." },
+          ],
+        },
+      ]),
+      getRecentCompletedItems: vi.fn().mockResolvedValue([]),
+    };
+
+    const context = await buildAIContext({
+      source,
+      conversationId: "44444444-4444-4444-8444-444444444444",
+      privacySettings: {
+        workspaceContextEnabled: false,
+        crossConversationEnabled: true,
+        documentSearchEnabled: false,
+      },
+    });
+
+    expect(context.instructionsContext).toContain("bounded excerpts");
+    expect(context.instructionsContext).toContain("CEDAR-LANTERN-6419");
+  });
+
   it("keeps only the ten most recently completed items", () => {
     const items = Array.from({ length: 12 }, (_, index) => ({
       type: index % 2 ? ("goal" as const) : ("task" as const),

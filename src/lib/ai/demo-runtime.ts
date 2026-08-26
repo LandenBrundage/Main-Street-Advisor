@@ -91,22 +91,42 @@ export function createDemoContextSource(): ContextSource {
       };
     },
     async getPreviousConversationSummaries(conversationId, limit) {
-      const { conversations } = getDemoAIData();
+      const { conversations, messages } = getDemoAIData();
       return conversations
-        .filter(
-          (conversation) =>
-            conversation.id !== conversationId &&
-            Boolean(conversation.summary_updated_at) &&
-            Boolean(conversation.summary),
-        )
+        .filter((conversation) => conversation.id !== conversationId)
         .sort((left, right) => right.updated_at.localeCompare(left.updated_at))
         .slice(0, limit)
         .map((conversation) => ({
           id: conversation.id,
           title: conversation.title,
           updated_at: conversation.updated_at,
-          summary: conversation.summary!,
-        }));
+          summary: conversation.summary_updated_at
+            ? conversation.summary
+            : null,
+          ...(!conversation.summary_updated_at
+            ? {
+                recentMessages: messages
+                  .filter(
+                    (message) =>
+                      message.conversation_id === conversation.id &&
+                      (message.role === "user" ||
+                        message.role === "assistant"),
+                  )
+                  .sort((left, right) =>
+                    left.created_at.localeCompare(right.created_at),
+                  )
+                  .slice(-4)
+                  .map(({ role, content }) => ({
+                    role,
+                    content: content.slice(0, 1_200),
+                  })),
+              }
+            : {}),
+        }))
+        .filter(
+          (conversation) =>
+            conversation.summary || conversation.recentMessages?.length,
+        );
     },
     async getRecentCompletedItems(limit) {
       const { goals, tasks } = getDemoAIData();

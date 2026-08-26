@@ -473,7 +473,7 @@ export function AccountSettings({ supportEmail = "" }: { supportEmail?: string }
             />
             <PrivacyToggle
               label="Previous consultations"
-              description="Allows summaries and details from other consultations to inform new answers."
+              description="Allows up to three recent consultation summaries or short, bounded excerpts to inform new answers."
               checked={privacy?.crossConversationEnabled ?? true}
               disabled={!privacy || Boolean(busy)}
               onChange={(checked) =>
