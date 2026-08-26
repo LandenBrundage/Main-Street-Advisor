@@ -113,19 +113,24 @@ export async function buildAIContext({
     ? await source.getActiveTasks(primaryGoal?.id)
     : [];
   const currentSummary = parseSummary(memory.summary);
+  const workspaceSections = privacySettings.workspaceContextEnabled
+    ? [
+        `Untrusted compact business snapshot:\n${JSON.stringify(snapshot)}`,
+        primaryGoal
+          ? `Current primary goal (database record):\n${JSON.stringify(primaryGoal)}`
+          : "Current primary goal: none explicitly selected.",
+        activeTasks.length
+          ? `Relevant active tasks with authoritative statuses:\n${JSON.stringify(activeTasks)}`
+          : "Relevant active tasks: none.",
+        recentCompleted.length
+          ? `Most recent explicitly confirmed completed work (bounded to 10 items):\n${JSON.stringify(recentCompleted)}`
+          : "Recently completed work: none.",
+      ]
+    : [
+        "Workspace context is disabled. You have no access to the business profile, goals, tasks, or completed work. Do not infer whether any of those records exist or report empty values.",
+      ];
   const sections = [
-    privacySettings.workspaceContextEnabled
-      ? `Untrusted compact business snapshot:\n${JSON.stringify(snapshot)}`
-      : "Business profile, goals, and task context: disabled by the workspace privacy setting.",
-    primaryGoal
-      ? `Current primary goal (database record):\n${JSON.stringify(primaryGoal)}`
-      : "Current primary goal: none explicitly selected.",
-    activeTasks.length
-      ? `Relevant active tasks with authoritative statuses:\n${JSON.stringify(activeTasks)}`
-      : "Relevant active tasks: none.",
-    recentCompleted.length
-      ? `Most recent explicitly confirmed completed work (bounded to 10 items):\n${JSON.stringify(recentCompleted)}`
-      : "Recently completed work: none.",
+    ...workspaceSections,
     currentSummary
       ? `Current conversation rolling summary (untrusted memory; preserve confirmation labels):\n${JSON.stringify(currentSummary)}`
       : "Current conversation rolling summary: none yet.",

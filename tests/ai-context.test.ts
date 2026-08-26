@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildBusinessContext } from "@/lib/ai/context";
+import {
+  buildAIContext,
+  type ContextSource,
+} from "@/lib/ai/context-builder";
 import { requestConsultantResponse } from "@/lib/ai/respond";
 import { fallbackTitle } from "@/lib/ai/title";
 
@@ -9,6 +13,48 @@ const cleanModeration = {
 };
 
 describe("AI context and request construction", () => {
+  it("does not retrieve or infer workspace records when workspace context is disabled", async () => {
+    const source = {
+      getBusinessSnapshot: vi.fn(),
+      getPrimaryGoal: vi.fn(),
+      getActiveTasks: vi.fn(),
+      getRecentCompletedItems: vi.fn(),
+      getCurrentConversationMemory: vi.fn().mockResolvedValue({
+        summary: null,
+        messages: [],
+      }),
+      getPreviousConversationSummaries: vi.fn(),
+    } satisfies ContextSource;
+
+    const context = await buildAIContext({
+      source,
+      conversationId: "privacy-test-conversation",
+      privacySettings: {
+        workspaceContextEnabled: false,
+        crossConversationEnabled: false,
+        documentSearchEnabled: false,
+      },
+    });
+
+    expect(source.getBusinessSnapshot).not.toHaveBeenCalled();
+    expect(source.getPrimaryGoal).not.toHaveBeenCalled();
+    expect(source.getActiveTasks).not.toHaveBeenCalled();
+    expect(source.getRecentCompletedItems).not.toHaveBeenCalled();
+    expect(source.getPreviousConversationSummaries).not.toHaveBeenCalled();
+    expect(context.instructionsContext).toContain(
+      "Workspace context is disabled. You have no access",
+    );
+    expect(context.instructionsContext).not.toContain(
+      "Current primary goal: none",
+    );
+    expect(context.instructionsContext).not.toContain(
+      "Relevant active tasks: none",
+    );
+    expect(context.instructionsContext).not.toContain(
+      "Recently completed work: none",
+    );
+  });
+
   it("includes populated saved profile fields and excludes empty/internal fields", () => {
     const context = buildBusinessContext({
       name: "Northstar Coffee",
