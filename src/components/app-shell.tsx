@@ -14,6 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PRODUCT_NAME } from "@/lib/config";
 import type { ConversationSummary } from "@/lib/domain";
 import { cn, initials } from "@/lib/utils";
@@ -44,6 +45,9 @@ export function AppShell({
   const [conversations, setConversations] = useState(initialConversations);
   const [conversationError, setConversationError] = useState("");
   const [deletingConversation, setDeletingConversation] = useState("");
+  const [pendingConversation, setPendingConversation] =
+    useState<ConversationSummary | null>(null);
+  const [deleteError, setDeleteError] = useState("");
   const refreshConversations = useCallback(async () => {
     try {
       const response = await fetch("/api/conversations", { cache: "no-store" });
@@ -61,16 +65,11 @@ export function AppShell({
   }, [refreshConversations]);
   const selectedId = path.match(/^\/app\/conversations\/([^/]+)/)?.[1];
   const removeConversation = useCallback(
-    async (id: string, title: string) => {
-      if (
-        deletingConversation ||
-        !window.confirm(
-          `Permanently delete “${title}” and its messages? Approved goals and tasks will remain.`,
-        )
-      )
-        return;
+    async (id: string) => {
+      if (deletingConversation) return;
       setDeletingConversation(id);
       setConversationError("");
+      setDeleteError("");
       try {
         const response = await fetch(`/api/conversations/${id}`, {
           method: "DELETE",
@@ -81,13 +80,15 @@ export function AppShell({
         }
         setConversations((current) => current.filter((item) => item.id !== id));
         clearCachedChatSession(id);
+        setPendingConversation(null);
         if (selectedId === id) router.replace("/app");
       } catch (error) {
-        setConversationError(
+        const message =
           error instanceof Error
             ? error.message
-            : "The consultation could not be deleted.",
-        );
+            : "The consultation could not be deleted.";
+        setConversationError(message);
+        setDeleteError(message);
       } finally {
         setDeletingConversation("");
       }
@@ -170,9 +171,10 @@ export function AppShell({
                   className="mr-1 rounded p-1.5 text-slate-400 opacity-70 hover:bg-red-50 hover:text-red-700 focus:opacity-100 group-hover:opacity-100"
                   aria-label={`Delete consultation: ${conversation.title}`}
                   disabled={Boolean(deletingConversation)}
-                  onClick={() =>
-                    removeConversation(conversation.id, conversation.title)
-                  }
+                  onClick={() => {
+                    setDeleteError("");
+                    setPendingConversation(conversation);
+                  }}
                 >
                   <Trash2 className="size-3.5" />
                 </button>
@@ -263,6 +265,22 @@ export function AppShell({
         </header>
         <main>{children}</main>
       </div>
+      <ConfirmDialog
+        open={Boolean(pendingConversation)}
+        title="Delete consultation?"
+        description={`“${pendingConversation?.title || "This consultation"}” and all of its messages will be permanently deleted. Approved goals and tasks will remain.`}
+        confirmLabel="Delete consultation"
+        busy={Boolean(deletingConversation)}
+        error={deleteError}
+        onCancel={() => {
+          if (deletingConversation) return;
+          setPendingConversation(null);
+          setDeleteError("");
+        }}
+        onConfirm={() => {
+          if (pendingConversation) removeConversation(pendingConversation.id);
+        }}
+      />
     </div>
   );
 }

@@ -69,7 +69,6 @@ describe("account navigation", () => {
   });
 
   it("removes a consultation only after explicit confirmation", async () => {
-    vi.stubGlobal("confirm", vi.fn(() => true));
     const fetchMock = vi.fn(() =>
       Promise.resolve({ ok: true } as Response),
     );
@@ -92,6 +91,24 @@ describe("account navigation", () => {
       screen.getByRole("button", {
         name: "Delete consultation: Private pricing review",
       }),
+    );
+    const confirmation = screen.getByRole("alertdialog", {
+      name: "Delete consultation?",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(
+      within(confirmation).getByRole("button", { name: "Cancel" }),
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Delete consultation: Private pricing review",
+      }),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("alertdialog", { name: "Delete consultation?" }),
+      ).getByRole("button", { name: "Delete consultation" }),
     );
     await waitFor(() =>
       expect(screen.queryByText("Private pricing review")).toBeNull(),

@@ -7,7 +7,7 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { TaskManager } from "@/components/tasks/task-manager";
 
 vi.mock("next/navigation", () => ({
@@ -17,12 +17,6 @@ const jsonResponse = (body: unknown, ok = true) =>
   Promise.resolve({ ok, json: () => Promise.resolve(body) } as Response);
 
 describe("persisted task and goal management", () => {
-  beforeEach(() => {
-    vi.stubGlobal(
-      "confirm",
-      vi.fn(() => true),
-    );
-  });
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
@@ -126,6 +120,61 @@ describe("persisted task and goal management", () => {
       ),
     );
     expect(screen.getByRole("dialog", { name: "Create a task" })).toBeTruthy();
+  });
+
+  it("uses the in-app confirmation before permanently deleting a task", async () => {
+    const task = testTask();
+    const fetchMock = vi.fn((url: string, options?: RequestInit) => {
+      if (url === "/api/tasks" && !options?.method)
+        return jsonResponse({ tasks: [task], goals: [] });
+      if (
+        url === `/api/tasks?id=${task.id}` &&
+        options?.method === "DELETE"
+      )
+        return Promise.resolve({ ok: true } as Response);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<TaskManager />);
+    await screen.findByText(task.title);
+    fireEvent.click(
+      screen.getByRole("button", { name: `Edit ${task.title}` }),
+    );
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Task details" })).getByRole(
+        "button",
+        { name: "Delete" },
+      ),
+    );
+    const confirmation = screen.getByRole("alertdialog", {
+      name: "Delete task?",
+    });
+    expect(
+      fetchMock.mock.calls.some(
+        ([url, options]) =>
+          url === `/api/tasks?id=${task.id}` &&
+          (options as RequestInit | undefined)?.method === "DELETE",
+      ),
+    ).toBe(false);
+    fireEvent.click(
+      within(confirmation).getByRole("button", { name: "Cancel" }),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Task details" })).getByRole(
+        "button",
+        { name: "Delete" },
+      ),
+    );
+    fireEvent.click(
+      within(
+        screen.getByRole("alertdialog", { name: "Delete task?" }),
+      ).getByRole("button", { name: "Delete task" }),
+    );
+    await screen.findByText("Task deleted.");
+    expect(screen.queryByText(task.title)).toBeNull();
   });
 
   it("moves a completed task between tabs and restores its previous incomplete status", async () => {

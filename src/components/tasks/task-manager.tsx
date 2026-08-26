@@ -18,6 +18,7 @@ import {
 import type { Goal, Priority, Task, TaskStatus } from "@/lib/domain";
 import { goalProgress, goalProgressLabel, priorityWeight } from "@/lib/domain";
 import { cn } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 type CompletionTab = "incomplete" | "completed";
 type TaskMutation = {
@@ -29,6 +30,9 @@ type TaskMutation = {
   status: TaskStatus;
   goalId: string | null;
 };
+type PendingDeletion =
+  | { kind: "task"; item: Task }
+  | { kind: "goal"; item: Goal };
 
 export function TaskManager() {
   const searchParams = useSearchParams();
@@ -52,6 +56,10 @@ export function TaskManager() {
   );
   const [busyTaskId, setBusyTaskId] = useState<string | null>(null);
   const [busyGoalId, setBusyGoalId] = useState<string | null>(null);
+  const [pendingDeletion, setPendingDeletion] =
+    useState<PendingDeletion | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   async function load() {
     try {
@@ -99,7 +107,6 @@ export function TaskManager() {
   }
 
   async function deleteTask(task: Task) {
-    if (!confirm(`Delete “${task.title}”? This cannot be undone.`)) return;
     const response = await fetch(`/api/tasks?id=${task.id}`, {
       method: "DELETE",
     });
@@ -168,12 +175,6 @@ export function TaskManager() {
   }
 
   async function deleteGoal(item: Goal) {
-    if (
-      !confirm(
-        `Delete “${item.title}”? Its tasks will not be deleted; they will move to No goal.`,
-      )
-    )
-      return;
     const response = await fetch(`/api/goals?id=${item.id}`, {
       method: "DELETE",
     });
@@ -189,6 +190,26 @@ export function TaskManager() {
     setGoal("all");
     setGoalDialog(null);
     setNotice("Goal deleted. Its tasks are now under No goal.");
+  }
+
+  async function confirmDeletion() {
+    if (!pendingDeletion || deleting) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      if (pendingDeletion.kind === "task")
+        await deleteTask(pendingDeletion.item);
+      else await deleteGoal(pendingDeletion.item);
+      setPendingDeletion(null);
+    } catch (error) {
+      setDeleteError(
+        error instanceof Error
+          ? error.message
+          : "This item could not be deleted.",
+      );
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function changeGoalCompletion(
@@ -629,7 +650,14 @@ export function TaskManager() {
           defaultGoalId={defaultGoalId}
           onClose={() => setEditing(null)}
           onSave={saveTask}
-          onDelete={editing === "new" ? undefined : () => deleteTask(editing)}
+          onDelete={
+            editing === "new"
+              ? undefined
+              : () => {
+                  setDeleteError("");
+                  setPendingDeletion({ kind: "task", item: editing });
+                }
+          }
         />
       )}{" "}
       {goalDialog && (
@@ -638,7 +666,12 @@ export function TaskManager() {
           onClose={() => setGoalDialog(null)}
           onSave={saveGoal}
           onDelete={
-            goalDialog === "new" ? undefined : () => deleteGoal(goalDialog)
+            goalDialog === "new"
+              ? undefined
+              : () => {
+                  setDeleteError("");
+                  setPendingDeletion({ kind: "goal", item: goalDialog });
+                }
           }
         />
       )}
@@ -662,6 +695,28 @@ export function TaskManager() {
           }
         />
       )}
+      <ConfirmDialog
+        open={Boolean(pendingDeletion)}
+        title={
+          pendingDeletion?.kind === "goal" ? "Delete goal?" : "Delete task?"
+        }
+        description={
+          pendingDeletion?.kind === "goal"
+            ? `“${pendingDeletion.item.title}” will be permanently deleted. Its tasks will remain and move to No goal.`
+            : `“${pendingDeletion?.item.title || "This task"}” will be permanently deleted. This cannot be undone.`
+        }
+        confirmLabel={
+          pendingDeletion?.kind === "goal" ? "Delete goal" : "Delete task"
+        }
+        busy={deleting}
+        error={deleteError}
+        onCancel={() => {
+          if (deleting) return;
+          setPendingDeletion(null);
+          setDeleteError("");
+        }}
+        onConfirm={confirmDeletion}
+      />
     </div>
   );
 }
@@ -1003,7 +1058,7 @@ function TaskDialog({
     status: TaskStatus;
     goalId: string | null;
   }) => Promise<void>;
-  onDelete?: () => Promise<void>;
+  onDelete?: () => void;
 }) {
   const [form, setForm] = useState({
       id: task?.id,
@@ -1125,19 +1180,7 @@ function TaskDialog({
       <div className="mt-6 flex items-center gap-2">
         {onDelete && (
           <button
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await onDelete();
-              } catch (reason) {
-                setError(
-                  reason instanceof Error
-                    ? reason.message
-                    : "The task could not be deleted.",
-                );
-                setBusy(false);
-              }
-            }}
+            onClick={onDelete}
             disabled={busy}
             className="btn-ghost mr-auto text-red-700"
           >
@@ -1172,7 +1215,7 @@ function GoalDialog({
     title: string;
     description: string;
   }) => Promise<void>;
-  onDelete?: () => Promise<void>;
+  onDelete?: () => void;
 }) {
   const [title, setTitle] = useState(goal?.title || ""),
     [description, setDescription] = useState(goal?.description || ""),
@@ -1226,19 +1269,7 @@ function GoalDialog({
           <button
             className="btn-ghost mr-auto text-red-700"
             disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              try {
-                await onDelete();
-              } catch (reason) {
-                setError(
-                  reason instanceof Error
-                    ? reason.message
-                    : "The goal could not be deleted.",
-                );
-                setBusy(false);
-              }
-            }}
+            onClick={onDelete}
           >
             <Trash2 className="size-4" />
             Delete goal

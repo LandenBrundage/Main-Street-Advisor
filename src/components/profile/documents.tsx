@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { ACCEPTED_FILE_TYPES, MAX_FILE_BYTES } from "@/lib/config";
 import { formatBytes } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 
 type DocumentRecord = {
   id: string;
@@ -24,6 +25,10 @@ export function BusinessDocuments() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
+  const [pendingDocument, setPendingDocument] =
+    useState<DocumentRecord | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
   useEffect(() => {
     fetch("/api/documents", { cache: "no-store" })
       .then(async (response) => {
@@ -93,23 +98,31 @@ export function BusinessDocuments() {
   }
 
   async function remove(document: DocumentRecord) {
-    if (
-      !confirm(
-        `Delete “${document.name}” and remove it from the consultant’s document search?`,
-      )
-    )
-      return;
-    const response = await fetch(`/api/documents?id=${document.id}`, {
-      method: "DELETE",
-    });
-    if (!response.ok) {
-      const data = await response.json();
-      setError(data.error || "The document could not be deleted.");
-      return;
+    if (removing) return;
+    setRemoving(true);
+    setDeleteError("");
+    try {
+      const response = await fetch(`/api/documents?id=${document.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || "The document could not be deleted.");
+      }
+      setDocuments((current) =>
+        current.filter((item) => item.id !== document.id),
+      );
+      setPendingDocument(null);
+    } catch (reason) {
+      const message =
+        reason instanceof Error
+          ? reason.message
+          : "The document could not be deleted.";
+      setError(message);
+      setDeleteError(message);
+    } finally {
+      setRemoving(false);
     }
-    setDocuments((current) =>
-      current.filter((item) => item.id !== document.id),
-    );
   }
 
   return (
@@ -184,9 +197,13 @@ export function BusinessDocuments() {
               {document.status}
             </span>
             <button
-              onClick={() => remove(document)}
+              onClick={() => {
+                setDeleteError("");
+                setPendingDocument(document);
+              }}
               className="p-2 text-slate-400 hover:text-red-700"
               aria-label={`Delete ${document.name}`}
+              disabled={removing}
             >
               <Trash2 className="size-4" />
             </button>
@@ -198,6 +215,22 @@ export function BusinessDocuments() {
           No documents uploaded yet.
         </p>
       )}
+      <ConfirmDialog
+        open={Boolean(pendingDocument)}
+        title="Delete document?"
+        description={`“${pendingDocument?.name || "This document"}” will be permanently deleted and removed from the consultant’s document search.`}
+        confirmLabel="Delete document"
+        busy={removing}
+        error={deleteError}
+        onCancel={() => {
+          if (removing) return;
+          setPendingDocument(null);
+          setDeleteError("");
+        }}
+        onConfirm={() => {
+          if (pendingDocument) remove(pendingDocument);
+        }}
+      />
     </div>
   );
 }
