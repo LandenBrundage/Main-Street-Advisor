@@ -41,6 +41,25 @@ export const createTaskPlanTool = {
     },
   },
 };
+export const suggestTaskPlanTool = {
+  type: "function" as const,
+  name: "suggest_task_plan",
+  description:
+    "Mark the current response as suitable for an optional Create goal & tasks control. Call only when the response gives concrete, multi-step recommendations that can meaningfully become one goal and a practical task list. Do not call for clarifying questions, simple explanations, general discussion, or when create_task_plan is being used.",
+  strict: true,
+  parameters: {
+    type: "object",
+    additionalProperties: false,
+    required: ["reason"],
+    properties: {
+      reason: {
+        type: "string",
+        description:
+          "A short internal explanation of why the recommendations are actionable. This is not shown to the user.",
+      },
+    },
+  },
+};
 export const proposeTaskCompletionTool = {
   type: "function" as const,
   name: "propose_task_completion",

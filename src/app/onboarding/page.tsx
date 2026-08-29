@@ -1,4 +1,23 @@
+import { redirect } from "next/navigation";
 import { OnboardingForm } from "@/components/onboarding-form";
-export default function Page() {
+import { ENABLE_DEMO_MODE } from "@/lib/config";
+import { requireUser } from "@/lib/supabase/server";
+
+export default async function Page() {
+  if (!ENABLE_DEMO_MODE) {
+    let auth;
+    try {
+      auth = await requireUser();
+    } catch {
+      redirect("/sign-in");
+    }
+    const { data: membership } = await auth.supabase
+      .from("business_memberships")
+      .select("business_id")
+      .eq("user_id", auth.user.id)
+      .limit(1)
+      .maybeSingle();
+    if (membership) redirect("/app");
+  }
   return <OnboardingForm />;
 }

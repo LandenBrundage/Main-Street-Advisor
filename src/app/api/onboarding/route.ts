@@ -26,3 +26,22 @@ export async function POST(request: Request) {
     return apiError(e);
   }
 }
+
+export async function PATCH() {
+  try {
+    if (ENABLE_DEMO_MODE) {
+      return NextResponse.json({ completed: true });
+    }
+    const { supabase, user } = await requireUser();
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ onboarding_completed_at: new Date().toISOString() })
+      .eq("id", user.id)
+      .select("id")
+      .maybeSingle();
+    if (error || !data) throw new Error("ONBOARDING_UPDATE_FAILED");
+    return NextResponse.json({ completed: true });
+  } catch (e) {
+    return apiError(e);
+  }
+}

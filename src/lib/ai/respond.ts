@@ -7,12 +7,16 @@ import {
   responseModerationConfig,
 } from "@/lib/ai/moderation";
 import { CONSULTANT_SYSTEM_PROMPT } from "@/lib/ai/system-prompt";
-import { createTaskPlanTool, proposeTaskCompletionTool } from "@/lib/ai/tools";
+import {
+  createTaskPlanTool,
+  proposeTaskCompletionTool,
+  suggestTaskPlanTool,
+} from "@/lib/ai/tools";
 
 export type ModelMessage = { role: "user" | "assistant"; content: string };
 export type ConsultantActionCall = {
   callId: string;
-  name: "create_task_plan" | "propose_task_completion";
+  name: "create_task_plan" | "propose_task_completion" | "suggest_task_plan";
   arguments: string;
 };
 export type ConsultantResponse = OpenAI.Responses.Response & {
@@ -41,7 +45,9 @@ export async function requestConsultantResponse({
   allowedRetrievalToolNames?: ReadonlySet<string>;
 }): Promise<ConsultantResponse> {
   const tools: OpenAI.Responses.Tool[] = [
-    ...(allowActionTools ? [createTaskPlanTool, proposeTaskCompletionTool] : []),
+    ...(allowActionTools
+      ? [createTaskPlanTool, proposeTaskCompletionTool, suggestTaskPlanTool]
+      : []),
     ...retrievalTools.filter(
       (tool) =>
         tool.type !== "function" || allowedRetrievalToolNames.has(tool.name),
@@ -95,7 +101,8 @@ export async function requestConsultantResponse({
     for (const call of calls) {
       if (
         call.name === "create_task_plan" ||
-        call.name === "propose_task_completion"
+        call.name === "propose_task_completion" ||
+        call.name === "suggest_task_plan"
       ) {
         actionCalls.set(call.call_id, {
           callId: call.call_id,
@@ -105,11 +112,19 @@ export async function requestConsultantResponse({
         outputs.push({
           type: "function_call_output",
           call_id: call.call_id,
-          output: JSON.stringify({
-            status: "awaiting_user_confirmation",
-            message:
-              "The application prepared a confirmation action. Explain that nothing changes until the user approves it.",
-          }),
+          output: JSON.stringify(
+            call.name === "suggest_task_plan"
+              ? {
+                  status: "suggestion_control_available",
+                  message:
+                    "The application will offer an optional Create goal & tasks control. Continue the full recommendation without claiming that a plan was created.",
+                }
+              : {
+                  status: "awaiting_user_confirmation",
+                  message:
+                    "The application prepared a confirmation action. Explain that nothing changes until the user approves it.",
+                },
+          ),
         });
         continue;
       }

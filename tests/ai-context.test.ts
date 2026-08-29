@@ -1,9 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildBusinessContext } from "@/lib/ai/context";
-import {
-  buildAIContext,
-  type ContextSource,
-} from "@/lib/ai/context-builder";
+import { buildAIContext, type ContextSource } from "@/lib/ai/context-builder";
 import { requestConsultantResponse } from "@/lib/ai/respond";
 import { fallbackTitle } from "@/lib/ai/title";
 
@@ -74,13 +71,11 @@ describe("AI context and request construction", () => {
   });
 
   it("sends different user questions as different Responses API inputs", async () => {
-    const create = vi
-      .fn()
-      .mockResolvedValue({
-        output: [],
-        output_text: "answer",
-        moderation: cleanModeration,
-      });
+    const create = vi.fn().mockResolvedValue({
+      output: [],
+      output_text: "answer",
+      moderation: cleanModeration,
+    });
     const openai = { responses: { create } } as never;
     await requestConsultantResponse({
       openai,
@@ -109,7 +104,9 @@ describe("AI context and request construction", () => {
         store: false,
         safety_identifier: "local-test-safety-id",
         max_output_tokens: 3000,
-        moderation: expect.objectContaining({ model: "omni-moderation-latest" }),
+        moderation: expect.objectContaining({
+          model: "omni-moderation-latest",
+        }),
       }),
     );
   });
@@ -127,11 +124,57 @@ describe("AI context and request construction", () => {
       messages: [{ role: "user", content: "Sensitive workplace discussion" }],
       allowActionTools: false,
     });
-    const names = create.mock.calls[0][0].tools.flatMap((tool: { name?: string }) =>
-      tool.name ? [tool.name] : [],
+    const names = create.mock.calls[0][0].tools.flatMap(
+      (tool: { name?: string }) => (tool.name ? [tool.name] : []),
     );
     expect(names).not.toContain("create_task_plan");
     expect(names).not.toContain("propose_task_completion");
+    expect(names).not.toContain("suggest_task_plan");
+  });
+
+  it("records an actionable-response signal without creating application data", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output_text: "",
+        moderation: cleanModeration,
+        output: [
+          {
+            type: "function_call",
+            name: "suggest_task_plan",
+            call_id: "call_suggestion",
+            arguments: JSON.stringify({
+              reason: "The response contains a concrete three-step test.",
+            }),
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: "Measure demand, run one offer, and compare the results.",
+        moderation: cleanModeration,
+      });
+
+    const result = await requestConsultantResponse({
+      openai: { responses: { create } } as never,
+      model: "test-model",
+      context: "Compact business snapshot",
+      messages: [{ role: "user", content: "How should I test demand?" }],
+    });
+
+    expect(result.actionCalls).toEqual([
+      expect.objectContaining({
+        callId: "call_suggestion",
+        name: "suggest_task_plan",
+      }),
+    ]);
+    expect(create.mock.calls[1][0].input).toContainEqual(
+      expect.objectContaining({
+        type: "function_call_output",
+        call_id: "call_suggestion",
+        output: expect.stringContaining("suggestion_control_available"),
+      }),
+    );
   });
 
   it("executes an approved retrieval tool and returns its output to the model", async () => {

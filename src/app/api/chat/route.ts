@@ -49,6 +49,7 @@ import { taskCompletionProposalSchema } from "@/lib/schemas";
 const bodySchema = z.object({
   conversationId: z.uuid().optional(),
   message: z.string().trim().min(1).max(12_000),
+  taskPlanSourceMessageId: z.uuid().optional(),
 });
 
 export async function POST(request: Request) {
@@ -92,6 +93,7 @@ export async function POST(request: Request) {
           privacySettings: getDemoAIPrivacySettings(),
           safetyIdentifier: await createSafetyIdentifier(user.id),
           allowActionTools: !moderation.flagged,
+          taskPlanSourceMessageId: body.taskPlanSourceMessageId,
           onTitleError: (error) =>
             safeDiagnostic("demo-conversation-title", error),
         });
@@ -100,6 +102,7 @@ export async function POST(request: Request) {
       const result = generateDemoConsultation({
         message: body.message,
         conversationId: body.conversationId,
+        taskPlanSourceMessageId: body.taskPlanSourceMessageId,
       });
       return NextResponse.json({
         conversationId: result.conversationId,
@@ -109,6 +112,7 @@ export async function POST(request: Request) {
           role: result.assistantMessage.role,
           content: result.assistantMessage.content,
           created_at: result.assistantMessage.created_at,
+          metadata: result.assistantMessage.metadata,
         },
         proposal: result.proposal,
         completionProposal: null,
@@ -156,9 +160,15 @@ export async function POST(request: Request) {
       crossConversationEnabled: privacyRow.ai_cross_conversation_enabled,
       documentSearchEnabled: privacyRow.ai_document_search_enabled,
     };
-    const allowedRetrievalToolNames = privacyScopedRetrievalToolNames(
-      privacySettings,
-    );
+    const allowedRetrievalToolNames =
+      privacyScopedRetrievalToolNames(privacySettings);
+
+    if (body.taskPlanSourceMessageId && !body.conversationId)
+      throw new AppError(
+        "TASK_PLAN_SOURCE_NOT_AVAILABLE",
+        "That recommendation is not available in this consultation.",
+        422,
+      );
 
     let conversationId = body.conversationId;
     let isNew = false;
@@ -200,11 +210,45 @@ export async function POST(request: Request) {
       );
     const activeConversationId = conversationId;
 
+    let taskPlanSourceMessage: {
+      id: string;
+      metadata: Record<string, unknown>;
+    } | null = null;
+    if (body.taskPlanSourceMessageId) {
+      const { data: source } = await supabase
+        .from("messages")
+        .select("id,metadata")
+        .eq("id", body.taskPlanSourceMessageId)
+        .eq("conversation_id", activeConversationId)
+        .eq("business_id", businessId)
+        .eq("role", "assistant")
+        .maybeSingle();
+      const metadata = asMetadata(source?.metadata);
+      if (!source || metadata.can_create_task_plan !== true)
+        throw new AppError(
+          "TASK_PLAN_SOURCE_NOT_AVAILABLE",
+          "That recommendation is not available for goal and task creation.",
+          422,
+        );
+      if (["approved", "cancelled"].includes(String(metadata.task_plan_status)))
+        throw new AppError(
+          "TASK_PLAN_ALREADY_HANDLED",
+          metadata.task_plan_status === "approved"
+            ? "A goal and tasks were already created from that recommendation."
+            : "That goal and task suggestion was already dismissed.",
+          409,
+        );
+      taskPlanSourceMessage = { id: source.id, metadata };
+    }
+
     const { error: userMessageError } = await supabase.from("messages").insert({
       conversation_id: activeConversationId,
       business_id: businessId,
       role: "user",
       content: body.message,
+      metadata: taskPlanSourceMessage
+        ? { task_plan_source_message_id: taskPlanSourceMessage.id }
+        : null,
     });
     if (userMessageError)
       throw new AppError(
@@ -269,7 +313,9 @@ export async function POST(request: Request) {
     if (call) {
       const plan = validateTaskPlan(JSON.parse(call.arguments));
       const idempotencyKey = await hash(
-        `${activeConversationId}:${call.callId}`,
+        taskPlanSourceMessage
+          ? `${activeConversationId}:recommendation:${taskPlanSourceMessage.id}`
+          : `${activeConversationId}:${call.callId}`,
       );
       const { data, error } = await supabase
         .from("ai_action_requests")
@@ -284,7 +330,7 @@ export async function POST(request: Request) {
           },
           { onConflict: "business_id,idempotency_key", ignoreDuplicates: true },
         )
-        .select("id,payload")
+        .select("id,payload,status")
         .maybeSingle();
       if (error)
         throw new AppError(
@@ -295,7 +341,7 @@ export async function POST(request: Request) {
       else {
         const { data: existing } = await supabase
           .from("ai_action_requests")
-          .select("id,payload")
+          .select("id,payload,status")
           .eq("business_id", businessId)
           .eq("idempotency_key", idempotencyKey)
           .single();
@@ -303,6 +349,18 @@ export async function POST(request: Request) {
           throw new AppError(
             "PROPOSAL_SAVE_FAILED",
             "The task proposal could not be recovered.",
+          );
+        if (existing.status === "approved")
+          throw new AppError(
+            "TASK_PLAN_ALREADY_HANDLED",
+            "A goal and tasks were already created from that recommendation.",
+            409,
+          );
+        if (existing.status !== "proposed")
+          throw new AppError(
+            "TASK_PLAN_ALREADY_HANDLED",
+            "That goal and task suggestion is no longer pending.",
+            409,
           );
         proposal = { id: existing.id, ...validateTaskPlan(existing.payload) };
       }
@@ -374,6 +432,27 @@ export async function POST(request: Request) {
       (proposal
         ? "I prepared an action plan for your approval."
         : "The AI response was empty. Please try again.");
+    const canCreateTaskPlan = Boolean(
+      response.actionCalls.some((item) => item.name === "suggest_task_plan") &&
+      !proposal &&
+      !taskPlanSourceMessage &&
+      !response.moderationBlocked,
+    );
+    const assistantMetadata =
+      proposal || completionProposal || canCreateTaskPlan
+        ? {
+            ...(proposal ? { proposal_id: proposal.id } : {}),
+            ...(completionProposal
+              ? { completion_request_id: completionProposal.id }
+              : {}),
+            ...(canCreateTaskPlan
+              ? {
+                  can_create_task_plan: true,
+                  task_plan_status: "available",
+                }
+              : {}),
+          }
+        : null;
     const { data: savedMessage, error: assistantError } = await supabase
       .from("messages")
       .insert({
@@ -381,15 +460,7 @@ export async function POST(request: Request) {
         business_id: businessId,
         role: "assistant",
         content: assistantMessage,
-        metadata:
-          proposal || completionProposal
-            ? {
-                ...(proposal ? { proposal_id: proposal.id } : {}),
-                ...(completionProposal
-                  ? { completion_request_id: completionProposal.id }
-                  : {}),
-              }
-            : null,
+        metadata: assistantMetadata,
       })
       .select("id,created_at")
       .single();
@@ -398,6 +469,22 @@ export async function POST(request: Request) {
         "MESSAGE_SAVE_FAILED",
         "The response was generated but could not be saved.",
       );
+    if (proposal && taskPlanSourceMessage) {
+      const { error: sourceUpdateError } = await supabase
+        .from("messages")
+        .update({
+          metadata: {
+            ...taskPlanSourceMessage.metadata,
+            proposal_id: proposal.id,
+            task_plan_status: "proposed",
+          },
+        })
+        .eq("id", taskPlanSourceMessage.id)
+        .eq("conversation_id", activeConversationId)
+        .eq("business_id", businessId);
+      if (sourceUpdateError)
+        safeDiagnostic("task-plan-source-update", sourceUpdateError);
+    }
 
     let title: string | undefined;
     if (isNew) {
@@ -423,6 +510,7 @@ export async function POST(request: Request) {
         role: "assistant",
         content: assistantMessage,
         created_at: savedMessage.created_at,
+        metadata: assistantMetadata,
       },
       proposal,
       completionProposal,
@@ -480,4 +568,10 @@ function mockResponse(message: string): Pick<
     output_text: `[Explicit AI mock] Received: ${message}`,
     actionCalls: [],
   };
+}
+
+function asMetadata(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }

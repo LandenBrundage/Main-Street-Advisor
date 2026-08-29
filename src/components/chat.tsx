@@ -5,9 +5,14 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   CheckCircle2,
+  ListPlus,
   Loader2,
+  Plus,
   RotateCcw,
   Sparkles,
+  Trash2,
+  WandSparkles,
+  X,
 } from "lucide-react";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import {
@@ -24,6 +29,38 @@ const suggestions = [
   "How can I improve customer retention?",
   "Help me prioritize my business goals.",
 ];
+
+type GuidedPromptDraft = {
+  goalOrChallenge: string;
+  background: string;
+  tried: string;
+  constraints: string;
+  desiredOutcome: string;
+};
+
+const emptyGuidedPrompt: GuidedPromptDraft = {
+  goalOrChallenge: "",
+  background: "",
+  tried: "",
+  constraints: "",
+  desiredOutcome: "",
+};
+
+export function buildGuidedPrompt(draft: GuidedPromptDraft) {
+  const sections = [
+    ["My goal or challenge", draft.goalOrChallenge],
+    ["Relevant background", draft.background],
+    ["What I have already tried", draft.tried],
+    ["Constraints or concerns", draft.constraints],
+    ["Desired outcome", draft.desiredOutcome],
+  ]
+    .filter(([, answer]) => answer.trim())
+    .map(([heading, answer]) => `${heading}:\n${answer.trim()}`);
+  return `${sections.join(
+    "\n\n",
+  )}\n\nPlease give me practical recommendations and explain the best next steps.`;
+}
+
 export function Chat({
   firstName = "there",
   businessName = "your business",
@@ -40,6 +77,9 @@ export function Chat({
     cached?.messages || [],
   );
   const [value, setValue] = useState("");
+  const [guidedOpen, setGuidedOpen] = useState(false);
+  const [guidedDraft, setGuidedDraft] =
+    useState<GuidedPromptDraft>(emptyGuidedPrompt);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(
     Boolean(initialConversationId && !cached),
@@ -56,7 +96,12 @@ export function Chat({
   } | null>(null);
   const [savedTaskCompletion, setSavedTaskCompletion] = useState("");
   const [lastAttempt, setLastAttempt] = useState("");
+  const [lastAttemptSourceMessageId, setLastAttemptSourceMessageId] = useState<
+    string | undefined
+  >();
+  const [creatingPlanFor, setCreatingPlanFor] = useState("");
   const end = useRef<HTMLDivElement>(null);
+  const composerInput = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
   useEffect(() => {
     messagesRef.current = messages;
@@ -93,7 +138,10 @@ export function Chat({
       .finally(() => setLoading(false));
     return () => controller.abort();
   }, [initialConversationId]);
-  async function send(text = value) {
+  async function send(
+    text = value,
+    options: { taskPlanSourceMessageId?: string } = {},
+  ) {
     const clean = text.trim();
     if (!clean || busy) return;
     const optimistic: ChatMessage = {
@@ -106,14 +154,24 @@ export function Chat({
     messagesRef.current = optimisticMessages;
     setMessages(optimisticMessages);
     setValue("");
+    setGuidedOpen(false);
     setBusy(true);
     setError("");
     setLastAttempt(clean);
+    setLastAttemptSourceMessageId(options.taskPlanSourceMessageId);
+    if (options.taskPlanSourceMessageId)
+      setCreatingPlanFor(options.taskPlanSourceMessageId);
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ conversationId, message: clean }),
+        body: JSON.stringify({
+          conversationId,
+          message: clean,
+          ...(options.taskPlanSourceMessageId
+            ? { taskPlanSourceMessageId: options.taskPlanSourceMessageId }
+            : {}),
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
@@ -132,7 +190,21 @@ export function Chat({
           data.error || "The consultant is temporarily unavailable.",
         );
       }
-      const nextMessages = [...messagesRef.current, data.message];
+      const currentMessages = options.taskPlanSourceMessageId
+        ? messagesRef.current.map((message) =>
+            message.id === options.taskPlanSourceMessageId && data.proposal
+              ? {
+                  ...message,
+                  metadata: {
+                    ...(message.metadata || {}),
+                    proposal_id: data.proposal.id,
+                    task_plan_status: "proposed",
+                  },
+                }
+              : message,
+          )
+        : messagesRef.current;
+      const nextMessages = [...currentMessages, data.message];
       messagesRef.current = nextMessages;
       setMessages(nextMessages);
       const nextProposal = data.proposal || proposal;
@@ -159,7 +231,31 @@ export function Chat({
       );
     } finally {
       setBusy(false);
+      setCreatingPlanFor("");
     }
+  }
+
+  function markProposalHandled(
+    proposalId: string,
+    status: "approved" | "cancelled",
+  ) {
+    const nextMessages = messagesRef.current.map((message) =>
+      message.metadata?.proposal_id === proposalId
+        ? {
+            ...message,
+            metadata: { ...message.metadata, task_plan_status: status },
+          }
+        : message,
+    );
+    messagesRef.current = nextMessages;
+    setMessages(nextMessages);
+    setProposal(null);
+    if (conversationId)
+      cacheChatSession(conversationId, {
+        messages: nextMessages,
+        proposal: null,
+        completionProposal,
+      });
   }
   const hour = new Date().getHours(),
     greeting =
@@ -212,7 +308,31 @@ export function Chat({
               }
             >
               {message.role === "assistant" ? (
-                <ChatMarkdown content={message.content} />
+                <>
+                  <ChatMarkdown content={message.content} />
+                  {canCreatePlanFromMessage(message) && (
+                    <button
+                      type="button"
+                      className="mt-3 inline-flex items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={busy}
+                      onClick={() =>
+                        send(
+                          "Create a goal and practical task list from your previous recommendation for my review.",
+                          { taskPlanSourceMessageId: message.id },
+                        )
+                      }
+                    >
+                      {creatingPlanFor === message.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <ListPlus className="size-4" />
+                      )}
+                      {creatingPlanFor === message.id
+                        ? "Preparing plan…"
+                        : "Create goal & tasks"}
+                    </button>
+                  )}
+                </>
               ) : (
                 <span className="whitespace-pre-wrap">{message.content}</span>
               )}
@@ -226,11 +346,14 @@ export function Chat({
           )}
           {proposal && (
             <Proposal
+              key={proposal.id}
               proposal={proposal}
-              onCancel={() => setProposal(null)}
+              onCancel={(proposalId) =>
+                markProposalHandled(proposalId, "cancelled")
+              }
               onSaved={(result) => {
                 setSaved(result);
-                setProposal(null);
+                markProposalHandled(proposal.id, "approved");
               }}
             />
           )}{" "}
@@ -275,32 +398,69 @@ export function Chat({
       )}
       <div className="sticky bottom-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-slate-200/60">
-          <textarea
-            aria-label="Message your business consultant"
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                send();
-              }
-            }}
-            rows={3}
-            placeholder="Describe a challenge, goal, or decision…"
-            className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-slate-400"
-          />
+          {guidedOpen ? (
+            <GuidedPromptBuilder
+              draft={guidedDraft}
+              onChange={setGuidedDraft}
+              onClose={() => setGuidedOpen(false)}
+              onBuild={() => {
+                const prompt = buildGuidedPrompt(guidedDraft);
+                setValue((current) =>
+                  current
+                    ? `${current}${current.endsWith("\n") ? "\n" : "\n\n"}${prompt}`
+                    : prompt,
+                );
+                setGuidedOpen(false);
+                setTimeout(() => composerInput.current?.focus(), 0);
+              }}
+            />
+          ) : (
+            <textarea
+              ref={composerInput}
+              aria-label="Message your business consultant"
+              value={value}
+              onChange={(event) => setValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  send();
+                }
+              }}
+              rows={3}
+              placeholder="Describe a challenge, goal, or decision…"
+              className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-slate-400"
+            />
+          )}
           <div className="flex items-center justify-between px-2 pb-1">
             <span className="text-xs text-slate-400">
-              Enter to send · Shift+Enter for a new line
+              {guidedOpen
+                ? "Add what you know—you can edit the prompt before sending"
+                : "Enter to send · Shift+Enter for a new line"}
             </span>
-            <button
-              onClick={() => send()}
-              disabled={!value.trim() || busy}
-              className="grid size-9 place-items-center rounded-lg bg-blue-600 text-white disabled:bg-slate-200"
-              aria-label="Send message"
-            >
-              <ArrowUp className="size-4" />
-            </button>
+            <div className="ml-3 flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setGuidedOpen((current) => !current)}
+                disabled={busy}
+                className="grid size-9 place-items-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                aria-label={
+                  guidedOpen ? "Close guided prompt" : "Build a guided prompt"
+                }
+                aria-controls="guided-prompt-builder"
+                aria-expanded={guidedOpen}
+                title="Build a guided prompt"
+              >
+                <WandSparkles className="size-4" />
+              </button>
+              <button
+                onClick={() => send()}
+                disabled={!value.trim() || busy || guidedOpen}
+                className="grid size-9 place-items-center rounded-lg bg-blue-600 text-white disabled:bg-slate-200"
+                aria-label="Send message"
+              >
+                <ArrowUp className="size-4" />
+              </button>
+            </div>
           </div>
         </div>
         {error && (
@@ -311,7 +471,11 @@ export function Chat({
             <span>{error}</span>
             {lastAttempt && (
               <button
-                onClick={() => send(lastAttempt)}
+                onClick={() =>
+                  send(lastAttempt, {
+                    taskPlanSourceMessageId: lastAttemptSourceMessageId,
+                  })
+                }
                 className="flex shrink-0 items-center gap-1 font-semibold"
               >
                 <RotateCcw className="size-3" />
@@ -332,6 +496,138 @@ export function Chat({
     </div>
   );
 }
+
+function GuidedPromptBuilder({
+  draft,
+  onChange,
+  onClose,
+  onBuild,
+}: {
+  draft: GuidedPromptDraft;
+  onChange: (draft: GuidedPromptDraft) => void;
+  onClose: () => void;
+  onBuild: () => void;
+}) {
+  function setField(field: keyof GuidedPromptDraft, value: string) {
+    onChange({ ...draft, [field]: value });
+  }
+
+  return (
+    <section
+      id="guided-prompt-builder"
+      aria-labelledby="guided-prompt-title"
+      className="max-h-[62vh] overflow-y-auto px-2 pb-3 pt-1"
+    >
+      <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-blue-100 bg-white px-1 py-3">
+        <div>
+          <h2
+            id="guided-prompt-title"
+            className="text-sm font-semibold text-slate-950"
+          >
+            Build a clearer business question
+          </h2>
+          <p className="mt-1 text-xs leading-5 text-slate-500">
+            Share only what is useful. Nothing sends until you review it.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          aria-label="Close guided prompt"
+        >
+          <X className="size-4" />
+        </button>
+      </div>
+
+      <div className="grid gap-4 px-1 py-4 sm:grid-cols-2">
+        <label className="sm:col-span-2">
+          <span className="label">
+            Goal or challenge <span className="text-red-500">•</span>
+          </span>
+          <textarea
+            className="field"
+            rows={2}
+            required
+            aria-required="true"
+            autoFocus
+            maxLength={2000}
+            value={draft.goalOrChallenge}
+            placeholder="What would you like to improve, decide, or solve?"
+            onChange={(event) =>
+              setField("goalOrChallenge", event.target.value)
+            }
+          />
+        </label>
+        <GuidedField
+          label="Relevant background"
+          value={draft.background}
+          placeholder="What should the advisor understand about the situation?"
+          onChange={(value) => setField("background", value)}
+        />
+        <GuidedField
+          label="What you have already tried"
+          value={draft.tried}
+          placeholder="Include what happened, if anything."
+          onChange={(value) => setField("tried", value)}
+        />
+        <GuidedField
+          label="Constraints or concerns"
+          value={draft.constraints}
+          placeholder="Budget, time, staffing, risks, or approaches to avoid."
+          onChange={(value) => setField("constraints", value)}
+        />
+        <GuidedField
+          label="Desired outcome"
+          value={draft.desiredOutcome}
+          placeholder="What would a useful result look like?"
+          onChange={(value) => setField("desiredOutcome", value)}
+        />
+      </div>
+
+      <div className="flex flex-col-reverse gap-2 border-t border-slate-100 px-1 pt-3 sm:flex-row sm:justify-end">
+        <button type="button" className="btn-secondary" onClick={onClose}>
+          Close
+        </button>
+        <button
+          type="button"
+          className="btn-primary"
+          disabled={!draft.goalOrChallenge.trim()}
+          onClick={onBuild}
+        >
+          <WandSparkles className="size-4" /> Build editable prompt
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function GuidedField({
+  label,
+  value,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label>
+      <span className="label">{label}</span>
+      <textarea
+        className="field"
+        rows={3}
+        maxLength={2000}
+        value={value}
+        placeholder={placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
 function CompletionProposal({
   proposal,
   onCancel,
@@ -401,22 +697,59 @@ function Proposal({
   onSaved,
 }: {
   proposal: TaskPlan & { id: string };
-  onCancel: () => void;
+  onCancel: (proposalId: string) => void;
   onSaved: (result: { taskCount: number; goalId?: string }) => void;
 }) {
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+  const [draft, setDraft] = useState<TaskPlan>(() => editablePlan(proposal));
+  const [busyAction, setBusyAction] = useState<"approve" | "cancel" | "">("");
+  const [error, setError] = useState("");
+
+  function setGoal(field: keyof TaskPlan["goal"], value: string) {
+    setDraft((current) => ({
+      ...current,
+      goal: { ...current.goal, [field]: value || undefined },
+    }));
+  }
+
+  function setTask(index: number, patch: Partial<TaskPlan["tasks"][number]>) {
+    setDraft((current) => ({
+      ...current,
+      tasks: current.tasks.map((task, taskIndex) =>
+        taskIndex === index ? { ...task, ...patch } : task,
+      ),
+    }));
+  }
+
   async function approve() {
-    if (busy) return;
-    setBusy(true);
+    if (busyAction) return;
+    const plan = editablePlan(draft);
+    if (
+      !plan.goal.title.trim() ||
+      plan.tasks.some((task) => !task.title.trim())
+    ) {
+      setError("Add a title for the goal and each task before saving.");
+      return;
+    }
+    setBusyAction("approve");
     setError("");
     try {
+      const updateResponse = await fetch(`/api/task-plans/${proposal.id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(plan),
+      });
+      const updateData = await updateResponse.json();
+      if (!updateResponse.ok)
+        throw new Error(
+          updateData.error || "The task proposal could not be updated.",
+        );
       const response = await fetch(`/api/task-plans/${proposal.id}/approve`, {
         method: "POST",
       });
       const data = await response.json();
       if (!response.ok)
         throw new Error(data.error || "The task proposal could not be saved.");
+      window.dispatchEvent(new Event("tasks:changed"));
       onSaved({ taskCount: data.tasks.length, goalId: data.goal?.id });
     } catch (reason) {
       setError(
@@ -424,55 +757,253 @@ function Proposal({
           ? reason.message
           : "The task proposal could not be saved.",
       );
-      setBusy(false);
+      setBusyAction("");
     }
   }
+
+  async function cancel() {
+    if (busyAction) return;
+    setBusyAction("cancel");
+    setError("");
+    try {
+      const response = await fetch(`/api/task-plans/${proposal.id}`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+      if (!response.ok)
+        throw new Error(
+          data.error || "The task proposal could not be cancelled.",
+        );
+      onCancel(proposal.id);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "The task proposal could not be cancelled.",
+      );
+      setBusyAction("");
+    }
+  }
+
   return (
-    <section className="card p-5">
+    <section
+      className="card border-blue-200 p-5"
+      aria-labelledby="task-plan-review-title"
+    >
       <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
         Proposed action plan
       </p>
-      <h2 className="mt-1 text-lg font-semibold">{proposal.goal.title}</h2>
-      {proposal.goal.description && (
-        <p className="mt-1 text-sm text-slate-500">
-          {proposal.goal.description}
-        </p>
-      )}
-      <ol className="mt-4 space-y-2">
-        {[...proposal.tasks]
-          .sort((a, b) => a.order - b.order)
-          .map((task) => (
-            <li
-              key={`${task.order}-${task.title}`}
-              className="flex gap-3 rounded-lg bg-slate-50 p-3 text-sm"
-            >
-              <span className="font-semibold text-blue-600">
-                {task.order + 1}
-              </span>
-              <span>
-                <b>{task.title}</b>
-                {task.description && (
-                  <span className="mt-1 block text-slate-500">
-                    {task.description}
-                  </span>
-                )}
-              </span>
-            </li>
-          ))}
+      <h2 id="task-plan-review-title" className="mt-1 text-lg font-semibold">
+        Review goal and tasks
+      </h2>
+      <p className="mt-1 text-sm leading-6 text-slate-500">
+        Edit anything below. Nothing is added until you confirm.
+      </p>
+
+      <div className="mt-5 grid gap-4 sm:grid-cols-2">
+        <label className="sm:col-span-2">
+          <span className="label">Goal title</span>
+          <input
+            className="field"
+            required
+            maxLength={160}
+            value={draft.goal.title}
+            onChange={(event) => setGoal("title", event.target.value)}
+          />
+        </label>
+        <label>
+          <span className="label">Goal description</span>
+          <textarea
+            className="field"
+            rows={3}
+            maxLength={4000}
+            value={draft.goal.description || ""}
+            onChange={(event) => setGoal("description", event.target.value)}
+          />
+        </label>
+        <label>
+          <span className="label">Target date</span>
+          <input
+            className="field"
+            type="date"
+            value={draft.goal.targetDate || ""}
+            onChange={(event) => setGoal("targetDate", event.target.value)}
+          />
+        </label>
+      </div>
+
+      <div className="mt-6 flex items-center justify-between gap-3">
+        <h3 className="font-semibold text-slate-900">Tasks</h3>
+        <button
+          type="button"
+          className="btn-secondary px-3 py-2"
+          disabled={Boolean(busyAction) || draft.tasks.length >= 30}
+          onClick={() =>
+            setDraft((current) => ({
+              ...current,
+              tasks: [
+                ...current.tasks,
+                {
+                  title: "",
+                  description: undefined,
+                  dueDate: undefined,
+                  priority: "na",
+                  order: current.tasks.length,
+                },
+              ],
+            }))
+          }
+        >
+          <Plus className="size-4" /> Add task
+        </button>
+      </div>
+      <ol className="mt-3 space-y-3">
+        {draft.tasks.map((task, index) => (
+          <li
+            key={index}
+            className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-blue-700">
+                Task {index + 1}
+              </p>
+              <button
+                type="button"
+                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label={`Remove task ${index + 1}`}
+                disabled={Boolean(busyAction) || draft.tasks.length === 1}
+                onClick={() =>
+                  setDraft((current) => ({
+                    ...current,
+                    tasks: current.tasks
+                      .filter((_, taskIndex) => taskIndex !== index)
+                      .map((item, taskIndex) => ({
+                        ...item,
+                        order: taskIndex,
+                      })),
+                  }))
+                }
+              >
+                <Trash2 className="size-4" />
+              </button>
+            </div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="sm:col-span-2">
+                <span className="label">Task title</span>
+                <input
+                  className="field"
+                  required
+                  maxLength={160}
+                  value={task.title}
+                  onChange={(event) =>
+                    setTask(index, { title: event.target.value })
+                  }
+                />
+              </label>
+              <label className="sm:col-span-2">
+                <span className="label">Task description</span>
+                <textarea
+                  className="field"
+                  rows={2}
+                  maxLength={4000}
+                  value={task.description || ""}
+                  onChange={(event) =>
+                    setTask(index, {
+                      description: event.target.value || undefined,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <span className="label">Due date</span>
+                <input
+                  className="field"
+                  type="date"
+                  value={task.dueDate || ""}
+                  onChange={(event) =>
+                    setTask(index, {
+                      dueDate: event.target.value || undefined,
+                    })
+                  }
+                />
+              </label>
+              <label>
+                <span className="label">Priority</span>
+                <select
+                  className="field"
+                  value={task.priority}
+                  onChange={(event) =>
+                    setTask(index, {
+                      priority: event.target
+                        .value as TaskPlan["tasks"][number]["priority"],
+                    })
+                  }
+                >
+                  <option value="na">No priority</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+            </div>
+          </li>
+        ))}
       </ol>
       {error && (
         <p role="alert" className="mt-3 text-sm text-red-700">
           {error}
         </p>
       )}
-      <div className="mt-4 flex gap-2">
-        <button onClick={approve} disabled={busy} className="btn-primary">
-          {busy && <Loader2 className="size-4 animate-spin" />}Add tasks
+      <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row">
+        <button
+          onClick={approve}
+          disabled={Boolean(busyAction)}
+          className="btn-primary"
+        >
+          {busyAction === "approve" && (
+            <Loader2 className="size-4 animate-spin" />
+          )}
+          Save goal & tasks
         </button>
-        <button onClick={onCancel} disabled={busy} className="btn-secondary">
+        <button
+          onClick={cancel}
+          disabled={Boolean(busyAction)}
+          className="btn-secondary"
+        >
+          {busyAction === "cancel" && (
+            <Loader2 className="size-4 animate-spin" />
+          )}
           Cancel
         </button>
       </div>
     </section>
+  );
+}
+
+function editablePlan(plan: TaskPlan): TaskPlan {
+  return {
+    goal: {
+      title: plan.goal.title,
+      description: plan.goal.description || undefined,
+      targetDate: plan.goal.targetDate || undefined,
+    },
+    tasks: [...plan.tasks]
+      .sort((left, right) => left.order - right.order)
+      .map((task, order) => ({
+        title: task.title,
+        description: task.description || undefined,
+        dueDate: task.dueDate || undefined,
+        priority: task.priority,
+        order,
+      })),
+  };
+}
+
+function canCreatePlanFromMessage(message: ChatMessage) {
+  return (
+    message.role === "assistant" &&
+    message.metadata?.can_create_task_plan === true &&
+    (message.metadata.task_plan_status === undefined ||
+      message.metadata.task_plan_status === "available")
   );
 }

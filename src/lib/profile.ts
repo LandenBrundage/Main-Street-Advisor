@@ -118,8 +118,6 @@ export function profileCompletion(profile: ProfileInput) {
     profile.basics.description,
     profile.offerings.main.length,
     profile.customers.idealCustomer,
-    profile.goals.primaryGoal,
-    profile.goals.biggestObstacle,
   ];
   return Math.round(
     (checks.filter((value) =>

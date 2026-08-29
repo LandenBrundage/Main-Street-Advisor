@@ -19,7 +19,7 @@ import { profileSchema, type ProfileInput } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
 
 const sections: Array<{
-  key: ProfileSectionKey | "documents";
+  key: Exclude<ProfileSectionKey, "goals"> | "documents";
   title: string;
   description: string;
 }> = [
@@ -47,12 +47,6 @@ const sections: Array<{
     key: "operations",
     title: "Operations",
     description: "People, tools, constraints, and time-intensive work.",
-  },
-  {
-    key: "goals",
-    title: "Goals and challenges",
-    description:
-      "Your primary outcome, constraints, and confirmed experiments.",
   },
   {
     key: "advice",

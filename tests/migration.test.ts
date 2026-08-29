@@ -28,6 +28,13 @@ const privacySql = readFileSync(
   ),
   "utf8",
 );
+const onboardingSql = readFileSync(
+  new URL(
+    "../supabase/migrations/202608280001_first_time_onboarding.sql",
+    import.meta.url,
+  ),
+  "utf8",
+);
 describe("goal migration safety", () => {
   it("preserves tasks while removing folder assignments", () => {
     expect(sql).toContain("update public.tasks set folder_id = null");
@@ -157,5 +164,15 @@ describe("privacy controls migration", () => {
       "revoke all on function public.consume_api_rate_limit",
     );
     expect(privacySql).toContain("to authenticated");
+  });
+});
+
+describe("first-time onboarding migration", () => {
+  it("treats existing profiles as complete without deleting account data", () => {
+    expect(onboardingSql).toContain("onboarding_completed_at timestamptz");
+    expect(onboardingSql).toContain(
+      "set onboarding_completed_at = coalesce(onboarding_completed_at, now())",
+    );
+    expect(onboardingSql).not.toMatch(/delete\s+from|drop\s+(table|column)/i);
   });
 });

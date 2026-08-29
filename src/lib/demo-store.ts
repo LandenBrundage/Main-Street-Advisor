@@ -321,6 +321,20 @@ export function addDemoMessage(input: {
   return message;
 }
 
+export function getDemoMessage(id: string) {
+  return getDemoState().messages.find((message) => message.id === id) || null;
+}
+
+export function updateDemoMessageMetadata(
+  id: string,
+  patch: Record<string, unknown>,
+) {
+  const message = getDemoMessage(id);
+  if (!message) return null;
+  message.metadata = { ...(message.metadata || {}), ...patch };
+  return message;
+}
+
 export function renameDemoConversation(id: string, title: string) {
   const conversation = getDemoConversation(id);
   if (!conversation) return null;
@@ -538,6 +552,20 @@ export function getDemoProposal(id: string) {
   return getDemoState().proposals.find((proposal) => proposal.id === id);
 }
 
+export function updateDemoProposal(id: string, payload: TaskPlan) {
+  const proposal = getDemoProposal(id);
+  if (!proposal || proposal.status !== "proposed") return null;
+  proposal.payload = payload;
+  return proposal;
+}
+
+export function cancelDemoProposal(id: string) {
+  const proposal = getDemoProposal(id);
+  if (!proposal || proposal.status !== "proposed") return null;
+  proposal.status = "cancelled";
+  return proposal;
+}
+
 export function createDemoCompletionRequest(input: {
   conversationId: string;
   taskId: string;
@@ -637,6 +665,7 @@ export function approveDemoProposal(id: string) {
       tasks,
     };
   }
+  if (proposal.status !== "proposed") return null;
   const goal =
     state.goals.find((item) => item.title === proposal.payload.goal.title) ||
     saveDemoGoal({
@@ -690,6 +719,7 @@ export function resetDemoState() {
 export function generateDemoConsultation(input: {
   message: string;
   conversationId?: string;
+  taskPlanSourceMessageId?: string;
 }) {
   const state = getDemoState();
   const conversation =
@@ -701,11 +731,25 @@ export function generateDemoConsultation(input: {
     role: "user",
     content: input.message,
   });
+  const sourceMessage = input.taskPlanSourceMessageId
+    ? getDemoMessage(input.taskPlanSourceMessageId)
+    : null;
+  if (
+    input.taskPlanSourceMessageId &&
+    (!sourceMessage ||
+      sourceMessage.conversation_id !== conversation.id ||
+      sourceMessage.role !== "assistant" ||
+      sourceMessage.metadata?.can_create_task_plan !== true)
+  ) {
+    throw new Error("TASK_PLAN_SOURCE_NOT_AVAILABLE");
+  }
   const proposal = shouldCreatePlan(input.message)
     ? createDemoProposal({
         conversationId: conversation.id,
         createdBy: state.user.id,
-        idempotencyKey: `${conversation.id}:${hashLike(input.message)}`,
+        idempotencyKey: input.taskPlanSourceMessageId
+          ? `${conversation.id}:recommendation:${input.taskPlanSourceMessageId}`
+          : `${conversation.id}:${hashLike(input.message)}`,
         payload: buildDemoPlan(input.message, state.business.name),
       })
     : null;
@@ -716,8 +760,16 @@ export function generateDemoConsultation(input: {
     conversationId: conversation.id,
     role: "assistant",
     content: assistantContent,
-    metadata: proposal ? { proposal_id: proposal.id } : null,
+    metadata: proposal
+      ? { proposal_id: proposal.id }
+      : { can_create_task_plan: true, task_plan_status: "available" },
   });
+  if (proposal && sourceMessage) {
+    updateDemoMessageMetadata(sourceMessage.id, {
+      proposal_id: proposal.id,
+      task_plan_status: "proposed",
+    });
+  }
   if (!input.conversationId) {
     renameDemoConversation(
       conversation.id,

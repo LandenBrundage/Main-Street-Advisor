@@ -17,8 +17,10 @@ import {
   getDemoAIData,
   getDemoConversation,
   getDemoWorkspace,
+  getDemoMessage,
   renameDemoConversation,
   startDemoConversation,
+  updateDemoMessageMetadata,
 } from "@/lib/demo-store";
 import { taskCompletionProposalSchema } from "@/lib/schemas";
 
@@ -31,6 +33,7 @@ export async function runDemoAIConsultation({
   privacySettings = DEFAULT_AI_PRIVACY_SETTINGS,
   safetyIdentifier = "local-test-safety-id",
   allowActionTools = true,
+  taskPlanSourceMessageId,
 }: {
   openai: OpenAI;
   model: string;
@@ -40,11 +43,24 @@ export async function runDemoAIConsultation({
   privacySettings?: AIPrivacySettings;
   safetyIdentifier?: string;
   allowActionTools?: boolean;
+  taskPlanSourceMessageId?: string;
 }) {
   const existing = conversationId ? getDemoConversation(conversationId) : null;
   if (conversationId && !existing) throw new Error("CONVERSATION_NOT_FOUND");
   const isNew = !existing;
   const conversation = existing || startDemoConversation("New consultation");
+  const sourceMessage = taskPlanSourceMessageId
+    ? getDemoMessage(taskPlanSourceMessageId)
+    : null;
+  if (
+    taskPlanSourceMessageId &&
+    (!sourceMessage ||
+      sourceMessage.conversation_id !== conversation.id ||
+      sourceMessage.role !== "assistant" ||
+      sourceMessage.metadata?.can_create_task_plan !== true)
+  ) {
+    throw new Error("TASK_PLAN_SOURCE_NOT_AVAILABLE");
+  }
   addDemoMessage({
     conversationId: conversation.id,
     role: "user",
@@ -56,9 +72,8 @@ export async function runDemoAIConsultation({
     conversationId: conversation.id,
     privacySettings,
   });
-  const allowedRetrievalToolNames = privacyScopedRetrievalToolNames(
-    privacySettings,
-  );
+  const allowedRetrievalToolNames =
+    privacyScopedRetrievalToolNames(privacySettings);
   const response = await requestConsultantResponse({
     openai,
     model,
@@ -83,7 +98,9 @@ export async function runDemoAIConsultation({
     const saved = createDemoProposal({
       conversationId: conversation.id,
       createdBy: user.id,
-      idempotencyKey: [conversation.id, planCall.callId].join(":"),
+      idempotencyKey: taskPlanSourceMessageId
+        ? [conversation.id, "recommendation", taskPlanSourceMessageId].join(":")
+        : [conversation.id, planCall.callId].join(":"),
       payload: plan,
     });
     proposal = { id: saved.id, ...plan };
@@ -121,20 +138,39 @@ export async function runDemoAIConsultation({
     (proposal
       ? "I prepared an action plan for your approval."
       : "The AI response was empty. Please try again.");
+  const canCreateTaskPlan = Boolean(
+    response.actionCalls.some((item) => item.name === "suggest_task_plan") &&
+    !proposal &&
+    !taskPlanSourceMessageId &&
+    !response.moderationBlocked,
+  );
+  const assistantMetadata =
+    proposal || completionProposal || canCreateTaskPlan
+      ? {
+          ...(proposal ? { proposal_id: proposal.id } : {}),
+          ...(completionProposal
+            ? { completion_request_id: completionProposal.id }
+            : {}),
+          ...(canCreateTaskPlan
+            ? {
+                can_create_task_plan: true,
+                task_plan_status: "available",
+              }
+            : {}),
+        }
+      : null;
   const assistantMessage = addDemoMessage({
     conversationId: conversation.id,
     role: "assistant",
     content: assistantContent,
-    metadata:
-      proposal || completionProposal
-        ? {
-            ...(proposal ? { proposal_id: proposal.id } : {}),
-            ...(completionProposal
-              ? { completion_request_id: completionProposal.id }
-              : {}),
-          }
-        : null,
+    metadata: assistantMetadata,
   });
+  if (proposal && sourceMessage) {
+    updateDemoMessageMetadata(sourceMessage.id, {
+      proposal_id: proposal.id,
+      task_plan_status: "proposed",
+    });
+  }
 
   let title: string | undefined;
   if (isNew) {
@@ -155,6 +191,7 @@ export async function runDemoAIConsultation({
       role: assistantMessage.role,
       content: assistantMessage.content,
       created_at: assistantMessage.created_at,
+      metadata: assistantMessage.metadata,
     },
     proposal,
     completionProposal,

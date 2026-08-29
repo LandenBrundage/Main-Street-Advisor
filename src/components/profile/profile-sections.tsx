@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { ProfileSectionKey } from "@/lib/profile";
 import type { ProfileInput } from "@/lib/schemas";
 
@@ -37,7 +37,7 @@ const industries = [
 export function ProfileSectionEditor({
   section,
   ...props
-}: SectionEditorProps & { section: ProfileSectionKey }) {
+}: SectionEditorProps & { section: Exclude<ProfileSectionKey, "goals"> }) {
   switch (section) {
     case "basics":
       return <Basics {...props} />;
@@ -49,8 +49,6 @@ export function ProfileSectionEditor({
       return <Performance {...props} />;
     case "operations":
       return <Operations {...props} />;
-    case "goals":
-      return <Goals {...props} />;
     case "advice":
       return <Advice {...props} />;
   }
@@ -66,10 +64,14 @@ function Basics({ profile, setRoot, setField }: SectionEditorProps) {
         onChange={(value) => setRoot("businessName", value)}
       />
       <label>
-        <span className="label">Industry *</span>
+        <span className="label">
+          Industry <RequiredMark />
+        </span>
         <input
           list="business-industries"
           className="field"
+          required
+          aria-required="true"
           value={profile.basics.industry}
           placeholder="Search or choose an industry"
           onChange={(event) =>
@@ -252,7 +254,7 @@ function Customers({ profile, setField }: SectionEditorProps) {
         onChange={(value) => setField("customers", "locations", value)}
       />
       <TagInput
-        label="Main competitors (optional)"
+        label="Main competitors"
         values={profile.customers.competitors}
         placeholder="Add a competitor"
         onChange={(values) => setField("customers", "competitors", values)}
@@ -456,139 +458,6 @@ function Operations({ profile, setField }: SectionEditorProps) {
   );
 }
 
-function Goals({ profile, setField }: SectionEditorProps) {
-  const tried = profile.goals.triedStrategies;
-  return (
-    <div className="space-y-5">
-      <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
-        This primary goal is linked to the Goals system. Updating it here never
-        changes any task’s completion status.
-      </div>
-      <TextField
-        label="Most important current goal"
-        required
-        value={profile.goals.primaryGoal}
-        onChange={(value) => setField("goals", "primaryGoal", value)}
-      />
-      <div className="grid gap-5 sm:grid-cols-2">
-        <label>
-          <span className="label">Desired completion date</span>
-          <input
-            type="date"
-            className="field"
-            value={profile.goals.targetDate}
-            onChange={(event) =>
-              setField("goals", "targetDate", event.target.value)
-            }
-          />
-        </label>
-        <TextField
-          label="Available time, budget, employees, or other resources"
-          value={profile.goals.availableResources}
-          onChange={(value) => setField("goals", "availableResources", value)}
-        />
-      </div>
-      <TextArea
-        label="What does success look like?"
-        value={profile.goals.successDefinition}
-        helper="Use a concrete outcome where possible, such as 20 additional weekly orders by October."
-        onChange={(value) => setField("goals", "successDefinition", value)}
-      />
-      <TextArea
-        label="Biggest obstacle or challenge"
-        required
-        value={profile.goals.biggestObstacle}
-        onChange={(value) => setField("goals", "biggestObstacle", value)}
-      />
-      <div>
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="label mb-0">Confirmed strategies already tried</p>
-            <p className="text-xs text-slate-500">
-              Only add actions the business actually tried—not recommendations.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="btn-secondary shrink-0"
-            onClick={() =>
-              setField("goals", "triedStrategies", [
-                ...tried,
-                { strategy: "", result: "" },
-              ])
-            }
-          >
-            <Plus className="size-4" /> Add
-          </button>
-        </div>
-        <div className="mt-3 space-y-3">
-          {tried.map((item, index) => (
-            <div
-              key={index}
-              className="grid gap-3 rounded-lg border border-slate-200 p-3 sm:grid-cols-[1fr_1fr_auto]"
-            >
-              <input
-                className="field"
-                aria-label={`Strategy ${index + 1}`}
-                placeholder="What was tried?"
-                value={item.strategy}
-                onChange={(event) =>
-                  setField(
-                    "goals",
-                    "triedStrategies",
-                    tried.map((entry, entryIndex) =>
-                      entryIndex === index
-                        ? { ...entry, strategy: event.target.value }
-                        : entry,
-                    ),
-                  )
-                }
-              />
-              <input
-                className="field"
-                aria-label={`Result ${index + 1}`}
-                placeholder="What happened?"
-                value={item.result}
-                onChange={(event) =>
-                  setField(
-                    "goals",
-                    "triedStrategies",
-                    tried.map((entry, entryIndex) =>
-                      entryIndex === index
-                        ? { ...entry, result: event.target.value }
-                        : entry,
-                    ),
-                  )
-                }
-              />
-              <button
-                type="button"
-                className="p-2 text-slate-400 hover:text-red-700"
-                aria-label={`Remove strategy ${index + 1}`}
-                onClick={() =>
-                  setField(
-                    "goals",
-                    "triedStrategies",
-                    tried.filter((_, entryIndex) => entryIndex !== index),
-                  )
-                }
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-      <TagInput
-        label="Solutions you do not want to use"
-        values={profile.goals.excludedSolutions}
-        placeholder="Add a boundary or excluded approach"
-        onChange={(values) => setField("goals", "excludedSolutions", values)}
-      />
-    </div>
-  );
-}
-
 function Advice({ profile, setField }: SectionEditorProps) {
   return (
     <div className="space-y-5">
@@ -671,11 +540,18 @@ function TextField({
     <label>
       <span className="label">
         {label}
-        {required ? " *" : ""}
+        {required && (
+          <>
+            {" "}
+            <RequiredMark />
+          </>
+        )}
       </span>
       <input
         className="field"
         type={type}
+        required={required}
+        aria-required={required || undefined}
         value={value}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
@@ -728,11 +604,18 @@ function TextArea({
     <label className={className}>
       <span className="label">
         {label}
-        {required ? " *" : ""}
+        {required && (
+          <>
+            {" "}
+            <RequiredMark />
+          </>
+        )}
       </span>
       <textarea
         className="field"
         rows={4}
+        required={required}
+        aria-required={required || undefined}
         value={value}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -846,11 +729,18 @@ function TagInput({
       <label>
         <span className="label">
           {label}
-          {required ? " *" : ""}
+          {required && (
+            <>
+              {" "}
+              <RequiredMark />
+            </>
+          )}
         </span>
         <div className="flex gap-2">
           <input
             className="field"
+            required={required && values.length === 0}
+            aria-required={required || undefined}
             value={draft}
             placeholder={placeholder}
             onChange={(event) => setDraft(event.target.value)}
@@ -886,5 +776,16 @@ function TagInput({
         ))}
       </div>
     </div>
+  );
+}
+
+function RequiredMark() {
+  return (
+    <>
+      <span aria-hidden="true" className="text-red-500">
+        •
+      </span>
+      <span className="sr-only"> (required)</span>
+    </>
   );
 }

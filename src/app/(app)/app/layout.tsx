@@ -20,6 +20,7 @@ export default async function Layout({
       <AppShell
         demoMode
         demoUsesRealAi={ENABLE_DEMO_AI}
+        showFirstTimeOnboarding={false}
         user={{
           name: accountName || user.email.split("@")[0] || "Business owner",
           email: user.email,
@@ -43,7 +44,7 @@ export default async function Layout({
   const [{ data: profile }, { data: conversations }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("full_name,avatar_path")
+      .select("full_name,avatar_path,onboarding_completed_at")
       .eq("id", user.id)
       .maybeSingle(),
     supabase
@@ -63,6 +64,7 @@ export default async function Layout({
   return (
     <AppShell
       demoMode={false}
+      showFirstTimeOnboarding={!profile?.onboarding_completed_at}
       user={{
         name:
           profile?.full_name || user.email?.split("@")[0] || "Business owner",

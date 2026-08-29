@@ -20,6 +20,7 @@ import type { ConversationSummary } from "@/lib/domain";
 import { cn, initials } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { clearCachedChatSession } from "@/lib/chat-session-store";
+import { FirstTimeOnboarding } from "@/components/first-time-onboarding";
 
 const nav = [
   { href: "/app", label: "Home", icon: Home },
@@ -32,12 +33,14 @@ export function AppShell({
   initialConversations,
   demoMode = false,
   demoUsesRealAi = false,
+  showFirstTimeOnboarding = false,
 }: {
   children: React.ReactNode;
   user: { name: string; email: string; avatarUrl?: string | null };
   initialConversations: ConversationSummary[];
   demoMode?: boolean;
   demoUsesRealAi?: boolean;
+  showFirstTimeOnboarding?: boolean;
 }) {
   const path = usePathname();
   const router = useRouter();
@@ -76,7 +79,9 @@ export function AppShell({
         });
         if (!response.ok) {
           const data = await response.json();
-          throw new Error(data.error || "The consultation could not be deleted.");
+          throw new Error(
+            data.error || "The consultation could not be deleted.",
+          );
         }
         setConversations((current) => current.filter((item) => item.id !== id));
         clearCachedChatSession(id);
@@ -281,6 +286,7 @@ export function AppShell({
           if (pendingConversation) removeConversation(pendingConversation.id);
         }}
       />
+      <FirstTimeOnboarding show={showFirstTimeOnboarding} />
     </div>
   );
 }

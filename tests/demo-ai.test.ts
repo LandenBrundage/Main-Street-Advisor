@@ -148,6 +148,49 @@ describe("fictional customer demo", () => {
     expect(getDemoAIData().tasks).toHaveLength(before + 1);
   });
 
+  it("marks only model-identified actionable responses for plan creation", async () => {
+    const create = vi
+      .fn()
+      .mockResolvedValueOnce({
+        output_text: "",
+        moderation: cleanModeration,
+        output: [
+          {
+            type: "function_call",
+            name: "suggest_task_plan",
+            call_id: "demo-suggestion-call",
+            arguments: JSON.stringify({
+              reason: "The answer gives a measurable sequence of actions.",
+            }),
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        moderation: cleanModeration,
+        output_text: "Measure demand, test one bundle, and review the results.",
+      })
+      .mockResolvedValueOnce({
+        output: [],
+        output_text: "Demand Test",
+        moderation: cleanModeration,
+      });
+
+    const result = await runDemoAIConsultation({
+      openai: { responses: { create } } as never,
+      model: "test-model",
+      message: "How should I test afternoon demand?",
+    });
+
+    expect(result.proposal).toBeNull();
+    expect(result.message.metadata).toEqual(
+      expect.objectContaining({
+        can_create_task_plan: true,
+        task_plan_status: "available",
+      }),
+    );
+  });
+
   it("requires approval before a chat-proposed task completion is persisted", async () => {
     const task = getDemoAIData().tasks.find(
       (item) => item.status === "in_progress",

@@ -3,23 +3,32 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { safeNextPath } from "@/lib/auth-redirect";
 import { Loader2 } from "lucide-react";
 export function AuthForm({
   mode,
   demoMode = false,
+  nextPath = "/app",
+  initialError = "",
 }: {
   mode: "sign-in" | "sign-up" | "reset";
   demoMode?: boolean;
+  nextPath?: string;
+  initialError?: string;
 }) {
   const router = useRouter();
+  const destination = safeNextPath(nextPath);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [sent, setSent] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<
+    "credentials" | "reset" | "google" | ""
+  >("");
+  const busy = Boolean(busyAction);
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setBusy(true);
+    setBusyAction(mode === "reset" ? "reset" : "credentials");
     setError("");
     try {
       const s = createClient();
@@ -33,14 +42,16 @@ export function AuthForm({
         const { error } = await s.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: `${location.origin}/auth/callback` },
+          options: {
+            emailRedirectTo: oauthCallbackUrl(destination),
+          },
         });
         if (error) throw error;
         setSent(true);
       } else {
         const { error } = await s.auth.signInWithPassword({ email, password });
         if (error) throw error;
-        router.replace("/app");
+        router.replace(destination);
         router.refresh();
       }
     } catch (e) {
@@ -50,23 +61,28 @@ export function AuthForm({
           : "Unable to continue. Please try again.",
       );
     } finally {
-      setBusy(false);
+      setBusyAction("");
     }
   }
   async function google() {
-    setBusy(true);
+    if (busy) return;
+    setBusyAction("google");
     setError("");
     try {
-      const { error } = await createClient().auth.signInWithOAuth({
+      const { data, error } = await createClient().auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${location.origin}/auth/callback` },
+        options: { redirectTo: oauthCallbackUrl(destination) },
       });
       if (error) throw error;
+      if (!data.url)
+        throw new Error(
+          "Google sign-in did not return a redirect. Check the Google provider configuration.",
+        );
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Google sign-in could not start.",
       );
-      setBusy(false);
+      setBusyAction("");
     }
   }
   return (
@@ -123,7 +139,9 @@ export function AuthForm({
               </p>
             )}
             <button className="btn-primary w-full" disabled={busy}>
-              {busy && <Loader2 className="size-4 animate-spin" />}
+              {busyAction && busyAction !== "google" && (
+                <Loader2 className="size-4 animate-spin" />
+              )}
               {mode === "sign-in"
                 ? "Sign in"
                 : mode === "sign-up"
@@ -144,7 +162,12 @@ export function AuthForm({
                 className="btn-secondary w-full"
                 disabled={busy}
               >
-                Continue with Google
+                {busyAction === "google" && (
+                  <Loader2 className="size-4 animate-spin" />
+                )}
+                {busyAction === "google"
+                  ? "Connecting to Google…"
+                  : "Continue with Google"}
               </button>
               {demoMode && (
                 <button
@@ -182,4 +205,10 @@ export function AuthForm({
       </p>
     </div>
   );
+}
+
+function oauthCallbackUrl(nextPath: string) {
+  const callback = new URL("/auth/callback", window.location.origin);
+  callback.searchParams.set("next", nextPath);
+  return callback.toString();
 }

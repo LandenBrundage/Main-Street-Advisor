@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { ENABLE_DEMO_MODE } from "@/lib/config";
+import { safeNextPath } from "@/lib/auth-redirect";
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   if (
@@ -48,19 +49,21 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const protectedRoute = path.startsWith("/app");
+  const protectedRoute = path.startsWith("/app") || path === "/onboarding";
   const authRoute =
     path.startsWith("/sign-") || path.startsWith("/reset-password");
   if (protectedRoute && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/sign-in";
-    url.searchParams.set("next", path);
+    url.searchParams.set("next", `${path}${request.nextUrl.search}`);
     return secureResponse(NextResponse.redirect(url), false);
   }
   if (authRoute && user) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/app";
-    return secureResponse(NextResponse.redirect(url), false);
+    const next = safeNextPath(request.nextUrl.searchParams.get("next"));
+    return secureResponse(
+      NextResponse.redirect(new URL(next, request.url)),
+      false,
+    );
   }
   return secureResponse(response, path.startsWith("/api/"));
 }
@@ -68,9 +71,11 @@ export async function proxy(request: NextRequest) {
 function matchesRequestHost(request: NextRequest, origin: string) {
   try {
     const originUrl = new URL(origin);
-    const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    const host =
+      request.headers.get("x-forwarded-host") || request.headers.get("host");
     const protocol =
-      request.headers.get("x-forwarded-proto") || request.nextUrl.protocol.slice(0, -1);
+      request.headers.get("x-forwarded-proto") ||
+      request.nextUrl.protocol.slice(0, -1);
     return originUrl.host === host && originUrl.protocol === `${protocol}:`;
   } catch {
     return false;
@@ -83,6 +88,7 @@ export const config = {
     "/sign-in",
     "/sign-up",
     "/reset-password",
+    "/onboarding",
   ],
 };
 
