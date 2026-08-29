@@ -15,6 +15,7 @@ const signInWithOAuth = vi.fn();
 const signInWithPassword = vi.fn();
 const signUp = vi.fn();
 const resetPasswordForEmail = vi.fn();
+const navigateTo = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace, refresh }),
@@ -39,6 +40,7 @@ afterEach(() => {
   signInWithPassword.mockReset();
   signUp.mockReset();
   resetPasswordForEmail.mockReset();
+  navigateTo.mockReset();
 });
 
 describe("authentication form", () => {
@@ -47,7 +49,13 @@ describe("authentication form", () => {
       data: { url: "https://accounts.google.com/o/oauth2/v2/auth" },
       error: null,
     });
-    render(<AuthForm mode="sign-in" nextPath="/app/tasks?view=active" />);
+    render(
+      <AuthForm
+        mode="sign-in"
+        nextPath="/app/tasks?view=active"
+        navigateTo={navigateTo}
+      />,
+    );
 
     fireEvent.click(
       screen.getByRole("button", { name: "Continue with Google" }),
@@ -58,8 +66,12 @@ describe("authentication form", () => {
       options: {
         redirectTo:
           "http://localhost:3000/auth/callback?next=%2Fapp%2Ftasks%3Fview%3Dactive",
+        skipBrowserRedirect: true,
       },
     });
+    expect(navigateTo).toHaveBeenCalledWith(
+      "https://accounts.google.com/o/oauth2/v2/auth",
+    );
     expect(
       screen.getByRole("button", { name: "Connecting to Google…" }),
     ).toHaveProperty("disabled", true);
@@ -70,7 +82,7 @@ describe("authentication form", () => {
       data: { url: null },
       error: new Error("Google provider is not enabled"),
     });
-    render(<AuthForm mode="sign-in" />);
+    render(<AuthForm mode="sign-in" navigateTo={navigateTo} />);
 
     fireEvent.click(
       screen.getByRole("button", { name: "Continue with Google" }),

@@ -10,11 +10,13 @@ export function AuthForm({
   demoMode = false,
   nextPath = "/app",
   initialError = "",
+  navigateTo = navigateBrowser,
 }: {
   mode: "sign-in" | "sign-up" | "reset";
   demoMode?: boolean;
   nextPath?: string;
   initialError?: string;
+  navigateTo?: (url: string) => void;
 }) {
   const router = useRouter();
   const destination = safeNextPath(nextPath);
@@ -71,13 +73,17 @@ export function AuthForm({
     try {
       const { data, error } = await createClient().auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: oauthCallbackUrl(destination) },
+        options: {
+          redirectTo: oauthCallbackUrl(destination),
+          skipBrowserRedirect: true,
+        },
       });
       if (error) throw error;
       if (!data.url)
         throw new Error(
           "Google sign-in did not return a redirect. Check the Google provider configuration.",
         );
+      navigateTo(data.url);
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "Google sign-in could not start.",
@@ -211,4 +217,8 @@ function oauthCallbackUrl(nextPath: string) {
   const callback = new URL("/auth/callback", window.location.origin);
   callback.searchParams.set("next", nextPath);
   return callback.toString();
+}
+
+function navigateBrowser(url: string) {
+  window.location.assign(url);
 }
