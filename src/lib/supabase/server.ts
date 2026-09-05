@@ -2,6 +2,8 @@ import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { hasAcceptedLegalDocuments } from "@/lib/legal-server";
+import { AppError } from "@/lib/http";
 export async function createClient() {
   const store = await cookies();
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -23,13 +25,22 @@ export async function createClient() {
     },
   });
 }
-export async function requireUser() {
+export async function requireUser({ requireAcceptance = true } = {}) {
   const supabase = await createClient();
   const {
     data: { user },
     error,
   } = await supabase.auth.getUser();
   if (error || !user) throw new Error("AUTH_REQUIRED");
+  if (
+    requireAcceptance &&
+    !(await hasAcceptedLegalDocuments(supabase, user.id))
+  )
+    throw new AppError(
+      "LEGAL_ACCEPTANCE_REQUIRED",
+      "Review and accept the Tester Terms and acknowledge the Privacy Policy to continue.",
+      403,
+    );
   return { supabase, user };
 }
 export async function requireWorkspace() {
@@ -47,8 +58,7 @@ export async function requireWorkspace() {
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey)
-    throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
+  if (!url || !serviceRoleKey) throw new Error("SUPABASE_ADMIN_NOT_CONFIGURED");
   return createSupabaseClient(url, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });

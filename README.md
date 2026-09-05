@@ -30,7 +30,7 @@ For a no-cost scripted demo, run `npm run dev:demo:offline` instead. Both demo v
 
 1. Create a project and copy its URL and anon/publishable key to `.env.local`.
 2. Install the Supabase CLI, link the project, then run `supabase db push`. If you use the SQL editor instead, run every file in `supabase/migrations` in filename order. Do not skip the goals repair, memory/profile/settings, completion-workflow, or `202608200001_privacy_controls.sql` migration.
-3. The migrations create tables, indexes, transactional functions, RLS policies, the private `business-documents` bucket, and the private `profile-avatars` bucket. RLS uses the authenticated user's `business_memberships`; server routes repeat workspace-scoped filters.
+3. The migrations create tables, indexes, transactional functions, RLS policies, the private `business-documents` bucket, and the private `profile-avatars` bucket. RLS uses the authenticated user's `business_memberships`; server routes repeat workspace-scoped filters. Apply `202609040001_legal_acceptance.sql` before deploying the first-login acknowledgment feature.
 4. In Authentication → URL Configuration, add `http://localhost:3000/auth/callback` for development and the equivalent production callback.
 5. In Authentication → Providers → Google, enable Google and enter the OAuth client credentials. Add Supabase's callback URL shown there to the Google Cloud OAuth client.
 
@@ -42,6 +42,8 @@ replaces only its own policies and trigger when rerun; it does not delete
 profiles, businesses, conversations, goals, or tasks.
 
 Email/password sign-up may require email confirmation depending on the project's Auth settings. A newly confirmed user is sent to onboarding, where `create_initial_workspace` atomically creates their profile, business, and owner membership. For a test account, sign up through `/sign-up`; no password is stored by this application.
+
+The public root URL shows the landing page. Before entering the workspace, authenticated users (including Google sign-ins) review the Tester Terms and Privacy Policy at `/accept-terms`. Acceptance is saved per user and document version with a database-generated timestamp. Existing users without a recorded acknowledgment also see this once. Update the version constants in `src/lib/legal.ts` when a document change requires fresh acknowledgment. Business APIs enforce the same requirement. Settings includes a glitch-report email link, defaulting to `mstreetadvisor@gmail.com`.
 
 ## OpenAI
 

@@ -103,8 +103,15 @@ export function AppShell({
   const sidebar = (
     <div className="flex h-full flex-col bg-white">
       <div className="flex h-16 items-center gap-2 border-b border-slate-200 px-5 font-semibold">
-        <BrandLogo className="w-14" />
-        <span className="leading-tight">{PRODUCT_NAME}</span>
+        <Link
+          href="/"
+          aria-label={`${PRODUCT_NAME} home`}
+          onClick={() => setOpen(false)}
+          className="flex items-center gap-2"
+        >
+          <BrandLogo className="w-14" />
+          <span className="leading-tight">{PRODUCT_NAME}</span>
+        </Link>
         <button
           className="ml-auto p-2 lg:hidden"
           onClick={() => setOpen(false)}
@@ -193,6 +200,25 @@ export function AppShell({
         )}
       </div>
       <div className="border-t border-slate-200 p-3">
+        <nav
+          aria-label="Legal documents"
+          className="mb-1 flex items-center gap-3 px-2 text-[11px] text-slate-400"
+        >
+          <Link
+            href="/privacy"
+            onClick={() => setOpen(false)}
+            className="hover:text-blue-700 hover:underline"
+          >
+            Privacy
+          </Link>
+          <Link
+            href="/terms"
+            onClick={() => setOpen(false)}
+            className="hover:text-blue-700 hover:underline"
+          >
+            Tester Terms
+          </Link>
+        </nav>
         <div className="flex items-center gap-3 rounded-lg p-2">
           <div
             className="grid size-9 shrink-0 place-items-center rounded-full bg-blue-100 bg-cover bg-center text-xs font-semibold text-blue-800"

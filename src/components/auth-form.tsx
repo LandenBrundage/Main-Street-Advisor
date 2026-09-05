@@ -139,6 +139,26 @@ export function AuthForm({
                 />
               </label>
             )}
+            {mode !== "reset" && (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+                For adults 18 and older. Before first use, we’ll ask you to
+                agree to the{" "}
+                <Link
+                  href="/terms"
+                  className="font-medium text-blue-700 hover:underline"
+                >
+                  Tester Terms
+                </Link>{" "}
+                and acknowledge the{" "}
+                <Link
+                  href="/privacy"
+                  className="font-medium text-blue-700 hover:underline"
+                >
+                  Privacy Policy
+                </Link>
+                .
+              </p>
+            )}
             {error && (
               <p role="alert" className="text-sm text-red-700">
                 {error}

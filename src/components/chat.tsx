@@ -12,7 +12,6 @@ import {
   Sparkles,
   Trash2,
   WandSparkles,
-  X,
 } from "lucide-react";
 import { ChatMarkdown } from "@/components/chat-markdown";
 import {
@@ -485,9 +484,16 @@ export function Chat({
           </div>
         )}
         <p className="mt-2 text-center text-[11px] text-slate-400">
-          AI can make mistakes. Confirm high-stakes legal, tax, accounting, and
-          financial decisions with a qualified professional. Avoid entering
-          passwords or government/payment identifiers.{" "}
+          Your message and enabled workspace context are processed by OpenAI. AI
+          can make mistakes; confirm high-stakes decisions with a qualified
+          professional and avoid passwords or government/payment identifiers.{" "}
+          <Link
+            href="/privacy#ai-and-documents"
+            className="underline hover:text-slate-600"
+          >
+            AI data details
+          </Link>
+          {" · "}
           <Link href="/app/settings" className="underline hover:text-slate-600">
             Manage AI privacy
           </Link>
@@ -530,14 +536,6 @@ function GuidedPromptBuilder({
             Share only what is useful. Nothing sends until you review it.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-          aria-label="Close guided prompt"
-        >
-          <X className="size-4" />
-        </button>
       </div>
 
       <div className="grid gap-4 px-1 py-4 sm:grid-cols-2">

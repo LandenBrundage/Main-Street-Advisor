@@ -109,4 +109,35 @@ describe("authentication form", () => {
     await waitFor(() => expect(replace).toHaveBeenCalledWith("/app/profile"));
     expect(refresh).toHaveBeenCalled();
   });
+
+  it("links the policies before signup and explains the first-use acknowledgment", async () => {
+    signUp.mockResolvedValue({ error: null });
+    render(<AuthForm mode="sign-up" navigateTo={navigateTo} />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "owner@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "secure-password" },
+    });
+
+    const createAccount = screen.getByRole("button", {
+      name: "Create account",
+    });
+    const google = screen.getByRole("button", { name: "Continue with Google" });
+    expect(createAccount).toHaveProperty("disabled", false);
+    expect(google).toHaveProperty("disabled", false);
+    expect(
+      screen.getByRole("link", { name: "Tester Terms" }).getAttribute("href"),
+    ).toBe("/terms");
+    expect(
+      screen.getByRole("link", { name: "Privacy Policy" }).getAttribute("href"),
+    ).toBe("/privacy");
+
+    expect(screen.queryByRole("checkbox")).toBeNull();
+    expect(document.body.textContent).toContain("Before first use");
+
+    fireEvent.click(createAccount);
+    await waitFor(() => expect(signUp).toHaveBeenCalledTimes(1));
+  });
 });

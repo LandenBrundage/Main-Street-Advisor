@@ -7,6 +7,7 @@ import {
   listDemoConversations,
 } from "@/lib/demo-store";
 import { requireWorkspace } from "@/lib/supabase/server";
+import { AppError } from "@/lib/http";
 
 export default async function Layout({
   children,
@@ -36,9 +37,13 @@ export default async function Layout({
   try {
     auth = await requireWorkspace();
   } catch (error) {
+    if (error instanceof AppError && error.code === "LEGAL_ACCEPTANCE_REQUIRED")
+      redirect("/accept-terms");
     if (error instanceof Error && error.message === "WORKSPACE_REQUIRED")
       redirect("/onboarding");
-    redirect("/sign-in");
+    if (error instanceof Error && error.message === "AUTH_REQUIRED")
+      redirect("/sign-in");
+    throw error;
   }
   const { supabase, user, businessId } = auth;
   const [{ data: profile }, { data: conversations }] = await Promise.all([

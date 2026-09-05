@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -35,7 +36,11 @@ type PrivacySettings = {
   documentSearchEnabled: boolean;
 };
 
-export function AccountSettings({ supportEmail = "" }: { supportEmail?: string }) {
+export function AccountSettings({
+  supportEmail = "",
+}: {
+  supportEmail?: string;
+}) {
   const router = useRouter();
   const [settings, setSettings] = useState<SettingsData | null>(null);
   const [name, setName] = useState("");
@@ -206,10 +211,7 @@ export function AccountSettings({ supportEmail = "" }: { supportEmail?: string }
     }
   }
 
-  async function updatePrivacy(
-    key: keyof PrivacySettings,
-    enabled: boolean,
-  ) {
+  async function updatePrivacy(key: keyof PrivacySettings, enabled: boolean) {
     if (!privacy || busy) return;
     const previous = privacy;
     const next = { ...privacy, [key]: enabled };
@@ -225,7 +227,9 @@ export function AccountSettings({ supportEmail = "" }: { supportEmail?: string }
       });
       const data = await response.json();
       if (!response.ok)
-        throw new Error(data.error || "AI privacy controls could not be saved.");
+        throw new Error(
+          data.error || "AI privacy controls could not be saved.",
+        );
       setPrivacy(data.settings);
       setNotice("AI privacy controls saved.");
     } catch (reason) {
@@ -458,8 +462,8 @@ export function AccountSettings({ supportEmail = "" }: { supportEmail?: string }
             </h2>
           </div>
           <p className="mt-1 text-sm leading-6 text-slate-500">
-            Your current consultation is always sent for a response. Choose which
-            additional workspace sources the consultant may use.
+            Your current consultation is always sent for a response. Choose
+            which additional workspace sources the consultant may use.
           </p>
           <div className="mt-5 divide-y divide-slate-100">
             <PrivacyToggle
@@ -501,35 +505,57 @@ export function AccountSettings({ supportEmail = "" }: { supportEmail?: string }
           </div>
           <p className="mt-2 text-sm leading-6 text-slate-600">
             Messages and enabled workspace context are processed by OpenAI to
-            produce consulting responses. Avoid submitting passwords, full Social
-            Security numbers, payment-card details, or information you do not need
-            for the consultation.
+            produce consulting responses. Avoid submitting passwords, full
+            Social Security numbers, payment-card details, or information you do
+            not need for the consultation.
           </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link className="btn-secondary" href="/privacy">
+              Privacy Policy
+            </Link>
+            <Link className="btn-secondary" href="/terms">
+              Tester Terms
+            </Link>
+            {supportEmail && (
+              <a
+                className="btn-secondary"
+                href={`mailto:${supportEmail}?subject=Main%20Street%20Advisor%20privacy%20or%20safety%20report`}
+              >
+                <Mail className="size-4" /> Report a privacy or safety issue
+              </a>
+            )}
+          </div>
           {supportEmail && (
-            <a
-              className="btn-secondary mt-4 inline-flex"
-              href={`mailto:${supportEmail}?subject=Main%20Street%20Advisor%20privacy%20or%20safety%20report`}
-            >
-              <Mail className="size-4" /> Report a privacy or safety issue
-            </a>
+            <p className="mt-4 text-sm leading-6 text-slate-600">
+              Found a glitch or need help? Email{" "}
+              <a
+                className="font-medium text-blue-700 hover:underline"
+                href={`mailto:${supportEmail}?subject=Main%20Street%20Advisor%20glitch%20report`}
+              >
+                {supportEmail}
+              </a>
+              . Include what happened and what you were trying to do.
+            </p>
           )}
         </section>
 
         <section className="rounded-xl border border-red-200 bg-red-50/40 p-5 sm:p-6">
           <div className="flex items-center gap-2">
             <Trash2 className="size-5 text-red-700" />
-            <h2 className="text-lg font-semibold text-red-950">Delete account</h2>
+            <h2 className="text-lg font-semibold text-red-950">
+              Delete account
+            </h2>
           </div>
           <p className="mt-2 text-sm leading-6 text-red-900/80">
-            Permanently removes the active workspace, consultations, stored files,
-            OpenAI search files, profile picture, and sign-in account. Provider
-            backups may expire on their own retention schedule.
+            Permanently removes the active workspace, consultations, stored
+            files, OpenAI search files, profile picture, and sign-in account.
+            Provider backups may expire on their own retention schedule.
           </p>
           {!settings?.accountDeletion.configured ||
           !settings.accountDeletion.eligible ? (
             <p className="mt-3 text-sm text-red-800">
-              Self-service deletion is unavailable for this workspace. Contact the
-              administrator for assisted deletion.
+              Self-service deletion is unavailable for this workspace. Contact
+              the administrator for assisted deletion.
             </p>
           ) : !showDelete ? (
             <button
@@ -547,7 +573,9 @@ export function AccountSettings({ supportEmail = "" }: { supportEmail?: string }
                 <input
                   className="field mt-1"
                   value={deleteConfirmation}
-                  onChange={(event) => setDeleteConfirmation(event.target.value)}
+                  onChange={(event) =>
+                    setDeleteConfirmation(event.target.value)
+                  }
                   autoComplete="off"
                 />
               </label>

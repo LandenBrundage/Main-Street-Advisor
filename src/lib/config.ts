@@ -4,6 +4,8 @@ export const PRODUCT_LOGO_PATH = "/main-street-advisor-logo.png";
 export const BRAND_TRUST_BLUE = "#003CA2";
 export const PRODUCT_DESCRIPTION =
   "Practical AI consulting and action planning for small businesses.";
+export const LEGAL_ENTITY_NAME = "Main Street Advisor LLC";
+export const LEGAL_EFFECTIVE_DATE = "September 4, 2026";
 export const OPENAI_MODEL = process.env.OPENAI_MODEL || "gpt-5.4-mini";
 export const OPENAI_MODERATION_MODEL =
   process.env.OPENAI_MODERATION_MODEL || "omni-moderation-latest";
@@ -40,7 +42,7 @@ export const AI_MAX_OUTPUT_TOKENS = positiveInteger(
   3000,
 );
 export const PRIVACY_SUPPORT_EMAIL =
-  process.env.NEXT_PUBLIC_PRIVACY_SUPPORT_EMAIL || "";
+  process.env.NEXT_PUBLIC_PRIVACY_SUPPORT_EMAIL || "mstreetadvisor@gmail.com";
 export const MAX_FILE_BYTES = 15 * 1024 * 1024;
 export const ACCEPTED_FILE_TYPES = [
   "application/pdf",

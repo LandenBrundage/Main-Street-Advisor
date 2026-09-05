@@ -55,7 +55,7 @@ describe("first-time onboarding", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it("persists Not now instead of showing on every login", async () => {
+  it("persists Close instead of showing on every login", async () => {
     const fetchMock = vi.fn(() =>
       Promise.resolve(
         new Response(JSON.stringify({ completed: true }), {
@@ -67,7 +67,7 @@ describe("first-time onboarding", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<FirstTimeOnboarding show />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(fetchMock).toHaveBeenCalledWith("/api/onboarding", {
       method: "PATCH",

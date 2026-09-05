@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   AlertCircle,
@@ -25,8 +26,9 @@ export function BusinessDocuments() {
   const [documents, setDocuments] = useState<DocumentRecord[]>([]);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
-  const [pendingDocument, setPendingDocument] =
-    useState<DocumentRecord | null>(null);
+  const [pendingDocument, setPendingDocument] = useState<DocumentRecord | null>(
+    null,
+  );
   const [removing, setRemoving] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   useEffect(() => {
@@ -129,9 +131,16 @@ export function BusinessDocuments() {
     <div>
       <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
         Uploaded files are private to this workspace and are sent to OpenAI for
-        searchable AI indexing. Remove passwords, government/payment identifiers,
-        and unnecessary personal information first; file contents are treated as
-        business data, never as instructions.
+        searchable AI indexing. Remove passwords, government/payment
+        identifiers, and unnecessary personal information first; file contents
+        are treated as business data, never as instructions.{" "}
+        <Link
+          href="/privacy#ai-and-documents"
+          className="font-medium underline underline-offset-2"
+        >
+          How AI files are handled
+        </Link>
+        .
       </div>
       <label
         onDragEnter={() => setDragging(true)}

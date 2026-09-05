@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { ENABLE_DEMO_MODE } from "@/lib/config";
 import { safeNextPath } from "@/lib/auth-redirect";
+import { hasAcceptedLegalDocuments } from "@/lib/legal-server";
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   if (
@@ -49,7 +50,9 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const protectedRoute = path.startsWith("/app") || path === "/onboarding";
+  const workspaceRoute =
+    path === "/app" || path.startsWith("/app/") || path === "/onboarding";
+  const protectedRoute = workspaceRoute || path === "/accept-terms";
   const authRoute =
     path.startsWith("/sign-") || path.startsWith("/reset-password");
   if (protectedRoute && !user) {
@@ -64,6 +67,19 @@ export async function proxy(request: NextRequest) {
       NextResponse.redirect(new URL(next, request.url)),
       false,
     );
+  }
+  if (
+    workspaceRoute &&
+    user &&
+    !(await hasAcceptedLegalDocuments(supabase, user.id))
+  ) {
+    const url = new URL("/accept-terms", request.url);
+    url.searchParams.set("next", `${path}${request.nextUrl.search}`);
+    const redirectResponse = NextResponse.redirect(url);
+    response.cookies
+      .getAll()
+      .forEach((cookie) => redirectResponse.cookies.set(cookie));
+    return secureResponse(redirectResponse, true);
   }
   return secureResponse(response, path.startsWith("/api/"));
 }
@@ -89,6 +105,7 @@ export const config = {
     "/sign-up",
     "/reset-password",
     "/onboarding",
+    "/accept-terms",
   ],
 };
 

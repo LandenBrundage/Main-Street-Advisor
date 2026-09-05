@@ -7,7 +7,6 @@ import {
   BriefcaseBusiness,
   Loader2,
   Sparkles,
-  X,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
@@ -115,20 +114,6 @@ export function FirstTimeOnboarding({ show }: { show: boolean }) {
           <p className="text-xs font-semibold uppercase tracking-wider text-blue-700">
             Welcome · Step {step} of 2
           </p>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
-            aria-label="Close welcome"
-            disabled={busy}
-            onClick={() => void finish()}
-          >
-            {busy ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <X className="size-4" />
-            )}
-          </button>
         </div>
 
         <div className="p-6 sm:p-8">
@@ -186,6 +171,7 @@ export function FirstTimeOnboarding({ show }: { show: boolean }) {
         <div className="flex flex-col-reverse gap-2 border-t border-slate-100 bg-slate-50/70 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
           {error ? (
             <button
+              ref={closeButtonRef}
               type="button"
               className="btn-ghost"
               onClick={() => setOpen(false)}
@@ -194,12 +180,14 @@ export function FirstTimeOnboarding({ show }: { show: boolean }) {
             </button>
           ) : (
             <button
+              ref={closeButtonRef}
               type="button"
               className="btn-ghost"
               disabled={busy}
               onClick={() => void finish()}
             >
-              Not now
+              {busy && <Loader2 className="size-4 animate-spin" />}
+              Close
             </button>
           )}
           <div className="flex flex-col-reverse gap-2 sm:flex-row">
