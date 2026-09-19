@@ -12,12 +12,20 @@ export class AppError extends Error {
   }
 }
 export function safeDiagnostic(scope: string, error: unknown) {
+  const diagnostic =
+    error instanceof Error &&
+    "diagnostic" in error &&
+    error.diagnostic &&
+    typeof error.diagnostic === "object"
+      ? error.diagnostic
+      : undefined;
   const details =
     error instanceof AppError
       ? { name: error.name, code: error.code, status: error.status }
       : error instanceof Error
         ? {
             name: error.name,
+            ...(diagnostic ? { diagnostic } : {}),
             ...(process.env.NODE_ENV === "production"
               ? {}
               : { message: error.message }),

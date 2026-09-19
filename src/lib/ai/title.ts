@@ -36,7 +36,10 @@ export async function createConversationTitle({
       safety_identifier: safetyIdentifier,
       store: false,
     });
-    enforceResponseModeration(response);
+    await enforceResponseModeration(openai, response, {
+      input: message,
+      output: response.output_text,
+    });
     return (
       response.output_text
         .trim()

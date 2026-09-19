@@ -79,7 +79,10 @@ export async function requestConsultantResponse({
       store: false,
     });
     try {
-      enforceResponseModeration(response);
+      await enforceResponseModeration(openai, response, {
+        input: JSON.stringify(input),
+        output: JSON.stringify(response.output),
+      });
     } catch (error) {
       if (error instanceof ModerationBlockedError && error.side === "output")
         return Object.assign(response, {

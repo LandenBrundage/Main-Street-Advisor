@@ -172,6 +172,12 @@ async function summarizeMessages({
     safety_identifier: safetyIdentifier,
     store: false,
   });
-  enforceResponseModeration(response);
+  await enforceResponseModeration(openai, response, {
+    input: JSON.stringify({
+      previousSummary: previous,
+      messages: messages.map(({ role, content }) => ({ role, content })),
+    }),
+    output: response.output_text,
+  });
   return conversationSummarySchema.parse(JSON.parse(response.output_text));
 }
