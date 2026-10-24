@@ -5,7 +5,13 @@ import {
   getDemoAccountName,
   getDemoWorkspace,
   listDemoConversations,
+  getDemoProfile,
+  shouldShowDemoWelcome,
 } from "@/lib/demo-store";
+import {
+  mapStoredBusinessProfile,
+  missingRequiredProfileFields,
+} from "@/lib/profile";
 import { requireWorkspace } from "@/lib/supabase/server";
 import { AppError } from "@/lib/http";
 
@@ -21,7 +27,9 @@ export default async function Layout({
       <AppShell
         demoMode
         demoUsesRealAi={ENABLE_DEMO_AI}
-        showFirstTimeOnboarding={false}
+        showFirstTimeOnboarding={shouldShowDemoWelcome()}
+        initialMissingFields={missingRequiredProfileFields(getDemoProfile())}
+        tourStorageKey={`msa:workspace-tour:v1:demo:${user.id}`}
         user={{
           name: accountName || user.email.split("@")[0] || "Business owner",
           email: user.email,
@@ -46,7 +54,11 @@ export default async function Layout({
     throw error;
   }
   const { supabase, user, businessId } = auth;
-  const [{ data: profile }, { data: conversations }] = await Promise.all([
+  const [
+    { data: profile },
+    { data: conversations },
+    { data: business, error: businessError },
+  ] = await Promise.all([
     supabase
       .from("profiles")
       .select("full_name,avatar_path,onboarding_completed_at")
@@ -58,7 +70,12 @@ export default async function Layout({
       .eq("business_id", businessId)
       .order("updated_at", { ascending: false })
       .limit(20),
+    supabase.from("businesses").select("*").eq("id", businessId).single(),
   ]);
+  if (businessError || !business)
+    throw new Error(
+      "The business profile could not be loaded. Please try again.",
+    );
   let avatarUrl: string | null = null;
   if (profile?.avatar_path) {
     const { data } = await supabase.storage
@@ -70,6 +87,10 @@ export default async function Layout({
     <AppShell
       demoMode={false}
       showFirstTimeOnboarding={!profile?.onboarding_completed_at}
+      initialMissingFields={missingRequiredProfileFields(
+        mapStoredBusinessProfile({ business }),
+      )}
+      tourStorageKey={`msa:workspace-tour:v1:${user.id}:${businessId}`}
       user={{
         name:
           profile?.full_name || user.email?.split("@")[0] || "Business owner",

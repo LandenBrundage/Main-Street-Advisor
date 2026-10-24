@@ -120,6 +120,7 @@ type DemoCompletionRequest = {
 };
 
 type DemoState = {
+  welcomeCompleted: boolean;
   user: DemoUser;
   profile: DemoProfile;
   business: DemoBusiness;
@@ -186,6 +187,14 @@ export function getDemoProfile() {
   return mapStoredBusinessProfile({
     business: state.business as unknown as Record<string, unknown>,
   });
+}
+
+export function shouldShowDemoWelcome() {
+  return getDemoState().welcomeCompleted === false;
+}
+
+export function completeDemoWelcome() {
+  getDemoState().welcomeCompleted = true;
 }
 
 export function getDemoAccountName() {
@@ -713,7 +722,8 @@ export function getDemoAIData() {
 }
 
 export function resetDemoState() {
-  globalForDemo.__businessCopilotDemoState = createSeedState();
+  globalForDemo.__businessCopilotDemoState = undefined;
+  getDemoState();
 }
 
 export function generateDemoConsultation(input: {
@@ -786,8 +796,32 @@ export function generateDemoConsultation(input: {
 }
 
 function getDemoState() {
-  if (!globalForDemo.__businessCopilotDemoState)
+  if (!globalForDemo.__businessCopilotDemoState) {
     globalForDemo.__businessCopilotDemoState = createSeedState();
+    if (isDemoMode() && process.env.ENABLE_DEMO_ONBOARDING === "true") {
+      const state = globalForDemo.__businessCopilotDemoState;
+      saveDemoProfile(
+        profileSchema.parse({ businessName: state.business.name }),
+      );
+      Object.assign(state.business, {
+        annual_revenue: null,
+        fixed_costs: null,
+        variable_costs: null,
+        budget_constraints: null,
+        financial_notes: null,
+      });
+      Object.assign(state, {
+        welcomeCompleted: false,
+        goals: [],
+        tasks: [],
+        conversations: [],
+        messages: [],
+        documents: [],
+        proposals: [],
+        completionRequests: [],
+      });
+    }
+  }
   return globalForDemo.__businessCopilotDemoState;
 }
 
@@ -1212,6 +1246,7 @@ function createSeedState(): DemoState {
     ],
   };
   return {
+    welcomeCompleted: true,
     user: {
       id: userId,
       email: "maya@sunrise-bakery.example",

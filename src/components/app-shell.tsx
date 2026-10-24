@@ -12,6 +12,7 @@ import {
   X,
   MessageSquare,
   Trash2,
+  LockKeyhole,
 } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -21,30 +22,79 @@ import { cn, initials } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { clearCachedChatSession } from "@/lib/chat-session-store";
 import { FirstTimeOnboarding } from "@/components/first-time-onboarding";
+import {
+  WorkspaceOnboardingProvider,
+  useWorkspaceOnboarding,
+} from "@/components/workspace-onboarding";
+import { OnboardingDialog } from "@/components/onboarding-dialog";
+import { OnboardingSpotlight } from "@/components/onboarding-spotlight";
+import type { RequiredProfileField } from "@/lib/profile";
 
 const nav = [
   { href: "/app", label: "Home", icon: Home },
   { href: "/app/tasks", label: "Goals & Tasks", icon: CheckSquare2 },
   { href: "/app/profile", label: "Business Profile", icon: UserRound },
 ];
-export function AppShell({
-  children,
-  user,
-  initialConversations,
-  demoMode = false,
-  demoUsesRealAi = false,
-  showFirstTimeOnboarding = false,
-}: {
+type AppShellProps = {
   children: React.ReactNode;
   user: { name: string; email: string; avatarUrl?: string | null };
   initialConversations: ConversationSummary[];
   demoMode?: boolean;
   demoUsesRealAi?: boolean;
   showFirstTimeOnboarding?: boolean;
-}) {
+  initialMissingFields?: RequiredProfileField[];
+  tourStorageKey?: string;
+};
+
+export function AppShell(props: AppShellProps) {
+  return (
+    <WorkspaceOnboardingProvider
+      initialMissingFields={props.initialMissingFields || []}
+      storageKey={
+        props.tourStorageKey || `msa:workspace-tour:v1:${props.user.email}`
+      }
+      newUser={props.showFirstTimeOnboarding}
+    >
+      <AppShellContent {...props} />
+    </WorkspaceOnboardingProvider>
+  );
+}
+
+function AppShellContent({
+  children,
+  user,
+  initialConversations,
+  demoMode = false,
+  demoUsesRealAi = false,
+  showFirstTimeOnboarding = false,
+}: AppShellProps) {
   const path = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const onboarding = useWorkspaceOnboarding()!;
+  const locked = onboarding.missingFields.length > 0;
+  const [navigationReminder, setNavigationReminder] = useState(false);
+  const allowedWhileLocked =
+    path === "/app/profile" || path === "/app/settings";
+  useEffect(() => {
+    if (locked && !allowedWhileLocked) router.replace("/app/profile");
+  }, [locked, allowedWhileLocked, router]);
+  useEffect(() => {
+    if (onboarding.tourStep !== "navigation") return;
+    const revealMobileNavigation = () => {
+      if (window.matchMedia("(max-width: 1023px)").matches) setOpen(true);
+    };
+    // Keep the real target visible when the viewport changes during this step.
+    revealMobileNavigation();
+    window.addEventListener("resize", revealMobileNavigation);
+    return () => window.removeEventListener("resize", revealMobileNavigation);
+  }, [onboarding.tourStep]);
+  function remindAboutProfile() {
+    if (onboarding.tourStep === "profile")
+      onboarding.setTourStep("profile-ready");
+    setNavigationReminder(true);
+    setOpen(false);
+  }
   const [conversations, setConversations] = useState(initialConversations);
   const [conversationError, setConversationError] = useState("");
   const [deletingConversation, setDeletingConversation] = useState("");
@@ -132,22 +182,47 @@ export function AppShell({
         </div>
       )}
       <nav aria-label="Main navigation" className="space-y-1 px-3 pt-4">
-        {nav.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            onClick={() => setOpen(false)}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
-              path === href
-                ? "bg-blue-50 text-blue-700"
-                : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
-            )}
-          >
-            <Icon className="size-4" />
-            {label}
-          </Link>
-        ))}
+        {nav.map(({ href, label, icon: Icon }) =>
+          locked && href !== "/app/profile" ? (
+            <button
+              key={href}
+              type="button"
+              aria-disabled="true"
+              onClick={remindAboutProfile}
+              className="flex w-full items-center gap-3 rounded-lg bg-slate-50 px-3 py-2.5 text-left text-sm font-medium text-slate-400"
+            >
+              <Icon className="size-4" />
+              {label}
+              <LockKeyhole className="ml-auto size-3.5" />
+            </button>
+          ) : (
+            <Link
+              key={href}
+              href={href}
+              data-tour-target={href === "/app/tasks" ? "goals" : undefined}
+              onClick={() => {
+                setOpen(false);
+                if (
+                  href === "/app/tasks" &&
+                  onboarding.tourStep === "navigation"
+                )
+                  onboarding.setTourStep("goals");
+              }}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+                path === href
+                  ? "bg-blue-50 text-blue-700"
+                  : "text-slate-600 hover:bg-slate-50 hover:text-slate-950",
+                href === "/app/tasks" &&
+                  onboarding.tourStep === "navigation" &&
+                  "ring-2 ring-blue-400 ring-offset-2",
+              )}
+            >
+              <Icon className="size-4" />
+              {label}
+            </Link>
+          ),
+        )}
       </nav>
       <div className="mt-7 min-h-0 flex-1 overflow-y-auto px-4">
         <p className="mb-2 px-2 text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -168,17 +243,30 @@ export function AppShell({
                     : "text-slate-600 hover:bg-slate-50",
                 )}
               >
-                <Link
-                  href={`/app/conversations/${conversation.id}`}
-                  onClick={() => setOpen(false)}
-                  aria-current={
-                    selectedId === conversation.id ? "page" : undefined
-                  }
-                  className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2"
-                >
-                  <MessageSquare className="size-3.5 shrink-0" />
-                  <span className="truncate">{conversation.title}</span>
-                </Link>
+                {locked ? (
+                  <button
+                    type="button"
+                    aria-disabled="true"
+                    onClick={remindAboutProfile}
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2 text-left text-slate-400"
+                  >
+                    <MessageSquare className="size-3.5 shrink-0" />
+                    <span className="truncate">{conversation.title}</span>
+                    <LockKeyhole className="size-3.5 shrink-0" />
+                  </button>
+                ) : (
+                  <Link
+                    href={`/app/conversations/${conversation.id}`}
+                    onClick={() => setOpen(false)}
+                    aria-current={
+                      selectedId === conversation.id ? "page" : undefined
+                    }
+                    className="flex min-w-0 flex-1 items-center gap-2 px-2 py-2"
+                  >
+                    <MessageSquare className="size-3.5 shrink-0" />
+                    <span className="truncate">{conversation.title}</span>
+                  </Link>
+                )}
                 <button
                   className="mr-1 rounded p-1.5 text-slate-400 opacity-70 hover:bg-red-50 hover:text-red-700 focus:opacity-100 group-hover:opacity-100"
                   aria-label={`Delete consultation: ${conversation.title}`}
@@ -294,8 +382,53 @@ export function AppShell({
             {PRODUCT_NAME}
           </span>
         </header>
-        <main>{children}</main>
+        <main>
+          {locked && !allowedWhileLocked ? (
+            <p className="p-6 text-sm text-slate-500">
+              Opening your Business Profile…
+            </p>
+          ) : (
+            children
+          )}
+        </main>
       </div>
+      <OnboardingDialog
+        open={locked && navigationReminder}
+        title="Finish your business profile"
+        eyebrow="Business Profile"
+        nextLabel="Go to required fields"
+        onClose={() => setNavigationReminder(false)}
+        onNext={() => {
+          setNavigationReminder(false);
+          const first = onboarding.missingFields[0];
+          if (first) onboarding.requestField(first);
+          if (path !== "/app/profile") router.push("/app/profile");
+        }}
+      >
+        Complete the fields marked Required to unlock your advisor. Everything
+        marked Optional can wait. We’ll take you to the next required field.
+      </OnboardingDialog>
+      <OnboardingSpotlight
+        open={
+          onboarding.tourStep === "navigation" &&
+          !locked &&
+          path !== "/app/tasks"
+        }
+        title="Find your action plan"
+        targetSelector='[data-tour-target="goals"]'
+        eyebrow="Your workspace · Step 3 of 3"
+        nextLabel="Open Goals & Tasks"
+        onClose={() => onboarding.setTourStep("done")}
+        onNext={() => {
+          onboarding.setTourStep("goals");
+          setOpen(false);
+          router.push("/app/tasks");
+        }}
+      >
+        Click the highlighted Goals &amp; Tasks tab to see your goals and the
+        actions that move them forward. You can also open it using the button
+        below.
+      </OnboardingSpotlight>
       <ConfirmDialog
         open={Boolean(pendingConversation)}
         title="Delete consultation?"
@@ -312,7 +445,10 @@ export function AppShell({
           if (pendingConversation) removeConversation(pendingConversation.id);
         }}
       />
-      <FirstTimeOnboarding show={showFirstTimeOnboarding} />
+      <FirstTimeOnboarding
+        show={showFirstTimeOnboarding}
+        onDismiss={onboarding.dismissWelcome}
+      />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { ENABLE_DEMO_MODE } from "@/lib/config";
+import { completeDemoWelcome } from "@/lib/demo-store";
 import { apiError } from "@/lib/http";
 import { requireUser } from "@/lib/supabase/server";
 const schema = z.object({
@@ -30,6 +31,7 @@ export async function POST(request: Request) {
 export async function PATCH() {
   try {
     if (ENABLE_DEMO_MODE) {
+      completeDemoWelcome();
       return NextResponse.json({ completed: true });
     }
     const { supabase, user } = await requireUser();

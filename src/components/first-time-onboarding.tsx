@@ -10,7 +10,13 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
-export function FirstTimeOnboarding({ show }: { show: boolean }) {
+export function FirstTimeOnboarding({
+  show,
+  onDismiss,
+}: {
+  show: boolean;
+  onDismiss?: () => void;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(show);
   const [step, setStep] = useState<1 | 2>(1);
@@ -37,6 +43,7 @@ export function FirstTimeOnboarding({ show }: { show: boolean }) {
           );
         }
         setOpen(false);
+        onDismiss?.();
         if (destination) router.push(destination);
         router.refresh();
       } catch (reason) {
@@ -49,7 +56,7 @@ export function FirstTimeOnboarding({ show }: { show: boolean }) {
         setBusy(false);
       }
     },
-    [busy, router],
+    [busy, router, onDismiss],
   );
 
   useEffect(() => {
@@ -152,8 +159,9 @@ export function FirstTimeOnboarding({ show }: { show: boolean }) {
                 id={descriptionId}
                 className="mt-3 text-sm leading-6 text-slate-600"
               >
-                Complete your Business Profile so the advisor can give advice
-                that better fits your customers, services, and situation.
+                Add the five required details in your Business Profile to unlock
+                your advisor. Most fields, all financial information, and file
+                uploads are optional. You can add more context at any time.
               </p>
             </>
           )}
@@ -174,7 +182,10 @@ export function FirstTimeOnboarding({ show }: { show: boolean }) {
               ref={closeButtonRef}
               type="button"
               className="btn-ghost"
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false);
+                onDismiss?.();
+              }}
             >
               Continue for now
             </button>
@@ -224,7 +235,7 @@ export function FirstTimeOnboarding({ show }: { show: boolean }) {
                 onClick={() => void finish("/app/profile")}
               >
                 {busy && <Loader2 className="size-4 animate-spin" />}
-                Set Up Business Profile
+                Open profile
               </button>
             )}
           </div>

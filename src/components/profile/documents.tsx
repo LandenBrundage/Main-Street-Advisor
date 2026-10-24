@@ -129,6 +129,10 @@ export function BusinessDocuments() {
 
   return (
     <div>
+      <p className="mb-4 text-sm leading-6 text-slate-500">
+        File uploads are optional. You can add them later or continue to your
+        advisor below.
+      </p>
       <div className="mb-5 rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-blue-900">
         Uploaded files are private to this workspace and are sent to OpenAI for
         searchable AI indexing. Remove passwords, government/payment
@@ -159,7 +163,7 @@ export function BusinessDocuments() {
       >
         <UploadCloud className="size-7 text-blue-600" />
         <span className="mt-2 text-sm font-semibold">
-          Drop files here or browse
+          Drop files here or browse (Optional)
         </span>
         <span className="mt-1 text-xs text-slate-500">
           PDF, TXT, CSV, XLSX, or DOCX · up to 15 MB

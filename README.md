@@ -26,6 +26,28 @@ Open `http://localhost:3001/demo`. This starts a localhost-only fictional custom
 
 For a no-cost scripted demo, run `npm run dev:demo:offline` instead. Both demo variants are disabled in production, require no Supabase authentication, use only in-memory fictional data, and reset when their server restarts. They use `.next-demo`, so the authenticated app can continue running on port 3000.
 
+### Local onboarding preview
+
+Run `npm run dev:demo:onboarding` and open `http://localhost:3002/demo` to try
+the initial profile experience with a fictional business. Only the business
+name is prefilled. This preview uses offline AI and in-memory data, with no
+Supabase writes or OpenAI charges. It has its own `.next-onboarding` build folder.
+Restart the preview server to reset its business data and tour.
+
+Home, Goals & Tasks, and saved consultations unlock after all five required
+profile details have saved. Other profile fields and uploads are optional.
+Account settings and sign-out remain available during setup. The Continue to
+advisor button waits for a successful save, and opens a dismissible tour of
+chat, guided prompts, and Goals & Tasks. Guides and required-field reminders use
+the welcome's dialog styling and dimmed backdrop. The profile completion
+dialog appears once during setup; return visits show only the profile and progress.
+The prompt-builder step highlights its actual button while keeping it inactive;
+Next moves directly to the Goals & Tasks step. The builder works normally after
+the tour. The Goals & Tasks step highlights its clickable navigation tab.
+Tour and completion preferences are scoped to the
+account and workspace in this browser; the required-field check uses saved
+business data. No database migration is needed for this change.
+
 ## Supabase
 
 1. Create a project and copy its URL and anon/publishable key to `.env.local`.

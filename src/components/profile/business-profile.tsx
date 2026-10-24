@@ -1,22 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   AlertCircle,
   Check,
   ChevronLeft,
   ChevronRight,
   Loader2,
+  ArrowRight,
 } from "lucide-react";
 import { BusinessDocuments } from "@/components/profile/documents";
 import { ProfileSectionEditor } from "@/components/profile/profile-sections";
 import {
   emptyBusinessProfile,
   profileCompletion,
+  missingRequiredProfileFields,
   type ProfileSectionKey,
 } from "@/lib/profile";
 import { profileSchema, type ProfileInput } from "@/lib/schemas";
 import { cn } from "@/lib/utils";
+import { useWorkspaceOnboarding } from "@/components/workspace-onboarding";
+import { OnboardingDialog } from "@/components/onboarding-dialog";
 
 const sections: Array<{
   key: Exclude<ProfileSectionKey, "goals"> | "documents";
@@ -63,13 +68,30 @@ const sections: Array<{
 type SaveState = "loading" | "idle" | "saving" | "saved" | "error";
 
 export function BusinessProfile() {
+  const router = useRouter();
+  const onboarding = useWorkspaceOnboarding();
+  const reportSavedProfile = onboarding?.reportSavedProfile;
+  const requestedField = onboarding?.requestedField;
   const [profile, setProfile] = useState<ProfileInput>(emptyBusinessProfile);
   const [activeIndex, setActiveIndex] = useState(0);
   const [saveState, setSaveState] = useState<SaveState>("loading");
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
-  const loaded = useRef(false);
+  const [continuing, setContinuing] = useState(false);
+  const [showMissing, setShowMissing] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const version = useRef(0);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
+  const saveQueue = useRef<Promise<boolean>>(Promise.resolve(true));
+  const lastSavedVersion = useRef(0);
+  const inFlight = useRef<{
+    version: number;
+    promise: Promise<boolean>;
+  } | null>(null);
+  const fieldContainer = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -83,7 +105,8 @@ export function BusinessProfile() {
       .then((value) => {
         setProfile(value);
         setSaveState("saved");
-        loaded.current = true;
+        setHasLoaded(true);
+        reportSavedProfile?.(value);
       })
       .catch((reason) => {
         if (reason.name === "AbortError") return;
@@ -95,38 +118,77 @@ export function BusinessProfile() {
         setSaveState("error");
       });
     return () => controller.abort();
-  }, []);
+  }, [reportSavedProfile, loadAttempt]);
 
-  useEffect(() => {
-    if (!loaded.current || !dirty) return;
-    const savedVersion = version.current;
-    const timer = setTimeout(async () => {
-      setSaveState("saving");
-      setError("");
-      try {
-        const response = await fetch("/api/profile", {
-          method: "PUT",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(profile),
-        });
-        const data = await response.json();
-        if (!response.ok)
-          throw new Error(data.error || "Your profile could not be saved.");
-        if (version.current === savedVersion) {
+  const persistProfile = useCallback(
+    (snapshot: ProfileInput, savedVersion: number): Promise<boolean> => {
+      if (inFlight.current?.version === savedVersion)
+        return inFlight.current.promise;
+      const promise = saveQueue.current.then(async () => {
+        if (savedVersion !== version.current) return false;
+        if (lastSavedVersion.current === savedVersion) return true;
+        setSaveState("saving");
+        setError("");
+        try {
+          const response = await fetch("/api/profile", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(snapshot),
+          });
+          const data = await response.json();
+          if (!response.ok)
+            throw new Error(data.error || "Your profile could not be saved.");
+          if (version.current !== savedVersion) return false;
+          lastSavedVersion.current = savedVersion;
           setDirty(false);
           setSaveState("saved");
+          reportSavedProfile?.(snapshot);
+          return true;
+        } catch (reason) {
+          if (version.current === savedVersion) {
+            setError(
+              reason instanceof Error
+                ? reason.message
+                : "Your profile could not be saved.",
+            );
+            setSaveState("error");
+          }
+          return false;
         }
-      } catch (reason) {
-        setError(
-          reason instanceof Error
-            ? reason.message
-            : "Your profile could not be saved.",
-        );
-        setSaveState("error");
-      }
-    }, 800);
+      });
+      inFlight.current = { version: savedVersion, promise };
+      saveQueue.current = promise;
+      void promise.then(() => {
+        if (inFlight.current?.promise === promise) inFlight.current = null;
+      });
+      return promise;
+    },
+    [reportSavedProfile],
+  );
+
+  useEffect(() => {
+    if (!hasLoaded || !dirty) return;
+    const savedVersion = version.current;
+    saveTimer.current = setTimeout(
+      () => void persistProfile(profile, savedVersion),
+      800,
+    );
+    return () => clearTimeout(saveTimer.current);
+  }, [dirty, profile, persistProfile, hasLoaded]);
+
+  useEffect(() => {
+    if (!requestedField || !hasLoaded) return;
+    // A sidebar reminder can target a required field in another profile section.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveIndex(
+      sections.findIndex((section) => section.key === requestedField.section),
+    );
+    const timer = setTimeout(
+      () => document.getElementById(requestedField.id)?.focus(),
+      0,
+    );
     return () => clearTimeout(timer);
-  }, [dirty, profile]);
+  }, [requestedField, hasLoaded]);
 
   useEffect(() => {
     const beforeUnload = (event: BeforeUnloadEvent) => {
@@ -139,6 +201,7 @@ export function BusinessProfile() {
   }, [dirty, saveState]);
 
   const completion = useMemo(() => profileCompletion(profile), [profile]);
+  const missingFields = missingRequiredProfileFields(profile);
   const active = sections[activeIndex];
 
   function changed(next: ProfileInput) {
@@ -146,6 +209,41 @@ export function BusinessProfile() {
     setProfile(next);
     setDirty(true);
     setSaveState("idle");
+  }
+
+  function showRequiredField() {
+    const first = missingFields[0];
+    if (!first) return;
+    setShowMissing(false);
+    setActiveIndex(
+      sections.findIndex((section) => section.key === first.section),
+    );
+    setTimeout(() => document.getElementById(first.id)?.focus(), 0);
+  }
+
+  async function continueToAdvisor() {
+    if (continuing) return;
+    if (missingFields.length) {
+      setShowMissing(true);
+      return;
+    }
+    const invalidField = fieldContainer.current?.querySelector<
+      HTMLInputElement | HTMLTextAreaElement
+    >(":invalid");
+    if (invalidField) {
+      invalidField.reportValidity();
+      return;
+    }
+    setContinuing(true);
+    clearTimeout(saveTimer.current);
+    const saved = await persistProfile(profile, version.current);
+    if (saved) {
+      onboarding?.finishProfileSetup();
+      if (onboarding && onboarding.tourStep !== "done")
+        onboarding.setTourStep("advisor");
+      router.push("/app");
+    }
+    setContinuing(false);
   }
 
   function setRoot(
@@ -174,6 +272,24 @@ export function BusinessProfile() {
     );
   }
 
+  if (!hasLoaded) {
+    return (
+      <div role="alert" className="mx-auto max-w-3xl p-6">
+        <p className="text-sm text-red-700">{error}</p>
+        <button
+          type="button"
+          className="btn-secondary mt-4"
+          onClick={() => {
+            setSaveState("loading");
+            setLoadAttempt((attempt) => attempt + 1);
+          }}
+        >
+          Try loading again
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-6xl p-5 sm:p-8">
       <header className="flex flex-wrap items-start justify-between gap-5">
@@ -182,22 +298,21 @@ export function BusinessProfile() {
             Business Profile
           </h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-500">
-            Complete one section at a time. Changes save automatically and the
-            consultant uses a compact snapshot while keeping details available
-            on demand.
+            Business details help your advisor tailor its recommendations.
+            Changes save automatically.
           </p>
         </div>
         <div className="min-w-56">
           <div className="flex items-center justify-between text-sm">
             <span className="font-medium text-slate-700">
-              {completion}% complete
+              {completion}% of required details
             </span>
             <SaveStatus state={saveState} />
           </div>
           <div
             className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200"
             role="progressbar"
-            aria-label={`Business profile ${completion}% complete`}
+            aria-label={`Required business profile details ${completion}% complete`}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={completion}
@@ -209,6 +324,38 @@ export function BusinessProfile() {
           </div>
         </div>
       </header>
+
+      <OnboardingDialog
+        open={Boolean(
+          onboarding?.preferencesReady &&
+          !onboarding.profileSetupComplete &&
+          completion === 100 &&
+          !dirty &&
+          saveState === "saved" &&
+          onboarding.missingFields.length === 0,
+        )}
+        title="You’re ready to start"
+        eyebrow="Business Profile · Setup complete"
+        closeLabel="Keep editing"
+        nextLabel="Continue to advisor"
+        busy={continuing}
+        onClose={() => onboarding?.finishProfileSetup()}
+        onNext={() => void continueToAdvisor()}
+      >
+        Your required details are saved. Start a conversation with your advisor,
+        or add optional information whenever you like.
+      </OnboardingDialog>
+      <OnboardingDialog
+        open={showMissing && missingFields.length > 0}
+        title="Add the required details"
+        eyebrow="Business Profile"
+        nextLabel="Go to next required field"
+        onClose={() => setShowMissing(false)}
+        onNext={showRequiredField}
+      >
+        Complete the fields marked Required before continuing. Optional
+        information and file uploads can wait.
+      </OnboardingDialog>
 
       {error && (
         <div
@@ -275,7 +422,7 @@ export function BusinessProfile() {
             <p className="mt-1 text-sm text-slate-500">{active.description}</p>
           </div>
 
-          <div className="mt-6">
+          <div ref={fieldContainer} className="mt-6">
             {active.key === "documents" ? (
               <BusinessDocuments />
             ) : (
@@ -288,7 +435,7 @@ export function BusinessProfile() {
             )}
           </div>
 
-          <div className="mt-8 flex items-center justify-between border-t border-slate-100 pt-5">
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-5">
             <button
               type="button"
               className="btn-secondary"
@@ -310,11 +457,39 @@ export function BusinessProfile() {
                 Next <ChevronRight className="size-4" />
               </button>
             ) : (
-              <span className="flex items-center gap-2 text-sm font-medium text-emerald-700">
-                <Check className="size-4" /> Profile review complete
-              </span>
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={continuing}
+                onClick={() => void continueToAdvisor()}
+              >
+                {continuing ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ArrowRight className="size-4" />
+                )}
+                Continue to advisor
+              </button>
             )}
           </div>
+          {active.key === "documents" && (
+            <p className="mt-3 text-right text-xs leading-5 text-slate-500">
+              No upload is needed. Continue to the advisor to start your first
+              conversation.
+            </p>
+          )}
+          {saveState === "error" && (
+            <button
+              type="button"
+              className="btn-secondary mt-4"
+              onClick={() => {
+                inFlight.current = null;
+                void persistProfile(profile, version.current);
+              }}
+            >
+              Retry saving
+            </button>
+          )}
         </section>
       </div>
     </div>

@@ -19,6 +19,7 @@ import type { Goal, Priority, Task, TaskStatus } from "@/lib/domain";
 import { goalProgress, goalProgressLabel, priorityWeight } from "@/lib/domain";
 import { cn } from "@/lib/utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { GoalsGuide } from "@/components/workspace-tour";
 
 type CompletionTab = "incomplete" | "completed";
 type TaskMutation = {
@@ -31,8 +32,7 @@ type TaskMutation = {
   goalId: string | null;
 };
 type PendingDeletion =
-  | { kind: "task"; item: Task }
-  | { kind: "goal"; item: Goal };
+  { kind: "task"; item: Task } | { kind: "goal"; item: Goal };
 
 export function TaskManager() {
   const searchParams = useSearchParams();
@@ -347,6 +347,7 @@ export function TaskManager() {
           </button>
         </div>
       </header>
+      <GoalsGuide />
       {notice && (
         <p
           role="status"

@@ -185,7 +185,6 @@ test("privacy controls, local secret blocking, deletion controls, and headers ar
     "My payment card is 4111 1111 1111 1111",
   );
 
-  page.once("dialog", (dialog) => dialog.accept());
   const deleteButton = page
     .getByRole("button", { name: /Delete consultation:/ })
     .first();
@@ -195,5 +194,9 @@ test("privacy controls, local secret blocking, deletion controls, and headers ar
     "",
   );
   await deleteButton.click();
+  await page
+    .getByRole("alertdialog", { name: "Delete consultation?" })
+    .getByRole("button", { name: "Delete consultation", exact: true })
+    .click();
   await expect(page.getByText(deletedName, { exact: true })).toBeHidden();
 });

@@ -24,7 +24,7 @@ describe("business profile ownership boundaries", () => {
     expect(screen.queryByLabelText("Your name")).toBeNull();
   });
 
-  it("uses the required marker as the optional-field convention", () => {
+  it("explicitly labels required and optional fields", () => {
     render(
       <ProfileSectionEditor
         section="customers"
@@ -37,7 +37,8 @@ describe("business profile ownership boundaries", () => {
       "required",
       true,
     );
-    expect(screen.getByLabelText("Main competitors")).toBeTruthy();
-    expect(screen.queryByText(/\(optional\)/i)).toBeNull();
+    expect(screen.getByLabelText("Main competitors (Optional)")).toBeTruthy();
+    expect(screen.getAllByText("(Optional)").length).toBeGreaterThan(0);
+    expect(screen.getByText("(Required)")).toBeTruthy();
   });
 });

@@ -12,6 +12,7 @@ import { TaskManager } from "@/components/tasks/task-manager";
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
+  useRouter: () => ({ push: vi.fn() }),
 }));
 const jsonResponse = (body: unknown, ok = true) =>
   Promise.resolve({ ok, json: () => Promise.resolve(body) } as Response);

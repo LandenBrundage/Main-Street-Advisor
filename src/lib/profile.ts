@@ -112,20 +112,54 @@ export function serializeBusinessSnapshot(snapshot: Record<string, unknown>) {
 }
 
 export function profileCompletion(profile: ProfileInput) {
-  const checks = [
-    profile.businessName,
-    profile.basics.industry || profile.basics.industryOther,
-    profile.basics.description,
-    profile.offerings.main.length,
-    profile.customers.idealCustomer,
-  ];
   return Math.round(
-    (checks.filter((value) =>
-      typeof value === "number" ? value > 0 : Boolean(value),
-    ).length /
-      checks.length) *
-      100,
+    ((5 - missingRequiredProfileFields(profile).length) / 5) * 100,
   );
+}
+
+export type RequiredProfileField = {
+  id: string;
+  label: string;
+  section: "basics" | "offerings" | "customers";
+};
+
+export function missingRequiredProfileFields(
+  profile: ProfileInput,
+): RequiredProfileField[] {
+  return [
+    {
+      id: "business-name",
+      label: "Business name",
+      section: "basics" as const,
+      complete: Boolean(profile.businessName.trim()),
+    },
+    {
+      id: "business-industry",
+      label: "Industry",
+      section: "basics" as const,
+      complete: Boolean(profile.basics.industry.trim()),
+    },
+    {
+      id: "business-description",
+      label: "What does the business do?",
+      section: "basics" as const,
+      complete: Boolean(profile.basics.description.trim()),
+    },
+    {
+      id: "main-products-services",
+      label: "Main products or services",
+      section: "offerings" as const,
+      complete: profile.offerings.main.some((item) => Boolean(item.trim())),
+    },
+    {
+      id: "ideal-customer",
+      label: "Ideal customer",
+      section: "customers" as const,
+      complete: Boolean(profile.customers.idealCustomer.trim()),
+    },
+  ]
+    .filter((field) => !field.complete)
+    .map(({ id, label, section }) => ({ id, label, section }));
 }
 
 export function profileToLegacyColumns(profile: ProfileInput) {

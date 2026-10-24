@@ -18,9 +18,12 @@ import {
   cacheChatSession,
   getCachedChatSession,
   type CompletionProposalView,
+  type GuidedPromptDraft,
 } from "@/lib/chat-session-store";
 import type { ChatMessage } from "@/lib/domain";
 import type { TaskPlan } from "@/lib/schemas";
+import { AdvisorGuide, PromptGuide } from "@/components/workspace-tour";
+import { useWorkspaceOnboarding } from "@/components/workspace-onboarding";
 
 const suggestions = [
   "Help me increase weekday sales.",
@@ -28,14 +31,6 @@ const suggestions = [
   "How can I improve customer retention?",
   "Help me prioritize my business goals.",
 ];
-
-type GuidedPromptDraft = {
-  goalOrChallenge: string;
-  background: string;
-  tried: string;
-  constraints: string;
-  desiredOutcome: string;
-};
 
 const emptyGuidedPrompt: GuidedPromptDraft = {
   goalOrChallenge: "",
@@ -70,6 +65,7 @@ export function Chat({
   conversationId?: string;
 }) {
   const router = useRouter();
+  const onboarding = useWorkspaceOnboarding();
   const [cached] = useState(() => getCachedChatSession(initialConversationId));
   const [conversationId, setConversationId] = useState(initialConversationId);
   const [messages, setMessages] = useState<ChatMessage[]>(
@@ -79,6 +75,11 @@ export function Chat({
   const [guidedOpen, setGuidedOpen] = useState(false);
   const [guidedDraft, setGuidedDraft] =
     useState<GuidedPromptDraft>(emptyGuidedPrompt);
+
+  function openPromptBuilder() {
+    if (onboarding?.tourStep === "prompt") return;
+    setGuidedOpen(true);
+  }
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(
     Boolean(initialConversationId && !cached),
@@ -396,6 +397,7 @@ export function Chat({
         </div>
       )}
       <div className="sticky bottom-4">
+        <AdvisorGuide />
         <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-lg shadow-slate-200/60">
           {guidedOpen ? (
             <GuidedPromptBuilder
@@ -430,18 +432,22 @@ export function Chat({
               className="w-full resize-none bg-transparent px-3 py-2 text-sm outline-none placeholder:text-slate-400"
             />
           )}
+          {!guidedOpen && <PromptGuide />}
           <div className="flex items-center justify-between px-2 pb-1">
             <span className="text-xs text-slate-400">
               {guidedOpen
-                ? "Add what you know—you can edit the prompt before sending"
+                ? "Review your prompt before sending"
                 : "Enter to send · Shift+Enter for a new line"}
             </span>
             <div className="ml-3 flex shrink-0 items-center gap-2">
               <button
                 type="button"
-                onClick={() => setGuidedOpen((current) => !current)}
+                data-tour-target="prompt-builder"
+                onClick={() =>
+                  guidedOpen ? setGuidedOpen(false) : openPromptBuilder()
+                }
                 disabled={busy}
-                className="grid size-9 place-items-center rounded-lg border border-blue-200 bg-blue-50 text-blue-700 transition-colors hover:bg-blue-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400"
+                className={`inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-2 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400 ${onboarding?.tourStep === "prompt" ? "ring-2 ring-blue-400 ring-offset-2" : ""}`}
                 aria-label={
                   guidedOpen ? "Close guided prompt" : "Build a guided prompt"
                 }
@@ -450,6 +456,7 @@ export function Chat({
                 title="Build a guided prompt"
               >
                 <WandSparkles className="size-4" />
+                {guidedOpen ? "Close builder" : "Prompt builder"}
               </button>
               <button
                 onClick={() => send()}
