@@ -36,7 +36,9 @@
     ".next-launch-smoke/types/**/*.ts",
     ".next-launch-smoke/dev/types/**/*.ts",
     ".next-demo/types/**/*.ts",
-    ".next-demo/dev/types/**/*.ts"
+    ".next-demo/dev/types/**/*.ts",
+    ".next-onboarding/types/**/*.ts",
+    ".next-onboarding/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules", ".next", ".next-*"]
 }

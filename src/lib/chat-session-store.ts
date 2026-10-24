@@ -1,6 +1,14 @@
 import type { ChatMessage } from "@/lib/domain";
 import type { TaskPlan } from "@/lib/schemas";
 
+export type GuidedPromptDraft = {
+  goalOrChallenge: string;
+  background: string;
+  tried: string;
+  constraints: string;
+  desiredOutcome: string;
+};
+
 export type CompletionProposalView = {
   id: string;
   confirmationText: string;

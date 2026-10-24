@@ -4,6 +4,8 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import type { ProfileSectionKey } from "@/lib/profile";
 import type { ProfileInput } from "@/lib/schemas";
+import { useWorkspaceOnboarding } from "@/components/workspace-onboarding";
+import { OnboardingDialog } from "@/components/onboarding-dialog";
 
 export type SectionEditorProps = {
   profile: ProfileInput;
@@ -55,9 +57,31 @@ export function ProfileSectionEditor({
 }
 
 function Basics({ profile, setRoot, setField }: SectionEditorProps) {
+  const onboarding = useWorkspaceOnboarding();
   return (
     <div className="grid gap-5 sm:grid-cols-2">
+      {onboarding?.tourStep === "profile" &&
+        onboarding.missingFields.length > 0 && (
+          <OnboardingDialog
+            title="Start with just five details"
+            eyebrow="Business Profile"
+            nextLabel="Start profile"
+            onClose={() => onboarding.setTourStep("profile-ready")}
+            onNext={() => {
+              onboarding.setTourStep("profile-ready");
+              setTimeout(
+                () => document.getElementById("business-name")?.focus(),
+                0,
+              );
+            }}
+          >
+            Fill in the fields marked Required in the first three sections.
+            Everything else, including financial details and file uploads, is
+            optional. Your changes save automatically.
+          </OnboardingDialog>
+        )}
       <TextField
+        id="business-name"
         label="Business name"
         required
         value={profile.businessName}
@@ -68,6 +92,7 @@ function Basics({ profile, setRoot, setField }: SectionEditorProps) {
           Industry <RequiredMark />
         </span>
         <input
+          id="business-industry"
           list="business-industries"
           className="field"
           required
@@ -92,6 +117,7 @@ function Basics({ profile, setRoot, setField }: SectionEditorProps) {
         />
       )}
       <TextArea
+        id="business-description"
         className="sm:col-span-2"
         label="What does the business do?"
         required
@@ -162,9 +188,10 @@ function Basics({ profile, setRoot, setField }: SectionEditorProps) {
       {profile.legacyAdditionalInformation && (
         <details className="sm:col-span-2 rounded-lg border border-slate-200 bg-slate-50 p-4">
           <summary className="cursor-pointer text-sm font-semibold text-slate-700">
-            Review migrated legacy information
+            Review migrated legacy information (Optional)
           </summary>
           <textarea
+            aria-label="Migrated legacy information (Optional)"
             className="field mt-3"
             rows={5}
             value={profile.legacyAdditionalInformation}
@@ -186,6 +213,7 @@ function Offerings({ profile, setField }: SectionEditorProps) {
   return (
     <div className="space-y-5">
       <TagInput
+        id="main-products-services"
         label="Main products or services"
         required
         values={profile.offerings.main}
@@ -241,6 +269,7 @@ function Customers({ profile, setField }: SectionEditorProps) {
   return (
     <div className="grid gap-5 sm:grid-cols-2">
       <TextArea
+        id="ideal-customer"
         className="sm:col-span-2"
         label="Ideal customer"
         required
@@ -522,6 +551,7 @@ function Advice({ profile, setField }: SectionEditorProps) {
 }
 
 function TextField({
+  id,
   label,
   value,
   onChange,
@@ -529,6 +559,7 @@ function TextField({
   placeholder,
   type = "text",
 }: {
+  id?: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -539,15 +570,10 @@ function TextField({
   return (
     <label>
       <span className="label">
-        {label}
-        {required && (
-          <>
-            {" "}
-            <RequiredMark />
-          </>
-        )}
+        {label} {required ? <RequiredMark /> : <OptionalMark />}
       </span>
       <input
+        id={id}
         className="field"
         type={type}
         required={required}
@@ -571,7 +597,9 @@ function NumberField({
 }) {
   return (
     <label>
-      <span className="label">{label}</span>
+      <span className="label">
+        {label} <OptionalMark />
+      </span>
       <input
         className="field"
         type="number"
@@ -586,6 +614,7 @@ function NumberField({
 }
 
 function TextArea({
+  id,
   label,
   value,
   onChange,
@@ -593,6 +622,7 @@ function TextArea({
   required,
   className = "",
 }: {
+  id?: string;
   label: string;
   value: string;
   onChange: (value: string) => void;
@@ -603,15 +633,10 @@ function TextArea({
   return (
     <label className={className}>
       <span className="label">
-        {label}
-        {required && (
-          <>
-            {" "}
-            <RequiredMark />
-          </>
-        )}
+        {label} {required ? <RequiredMark /> : <OptionalMark />}
       </span>
       <textarea
+        id={id}
         className="field"
         rows={4}
         required={required}
@@ -639,7 +664,9 @@ function SelectField({
 }) {
   return (
     <label>
-      <span className="label">{label}</span>
+      <span className="label">
+        {label} <OptionalMark />
+      </span>
       <select
         className="field"
         value={value}
@@ -670,7 +697,9 @@ function ChoiceGroup({
 }) {
   return (
     <fieldset className={className}>
-      <legend className="label">{label}</legend>
+      <legend className="label">
+        {label} <OptionalMark />
+      </legend>
       <div className="flex flex-wrap gap-2">
         {options.map(([value, text]) => {
           const selected = values.includes(value);
@@ -705,12 +734,14 @@ function ChoiceGroup({
 }
 
 function TagInput({
+  id,
   label,
   values,
   onChange,
   placeholder,
   required,
 }: {
+  id?: string;
   label: string;
   values: string[];
   onChange: (values: string[]) => void;
@@ -728,16 +759,11 @@ function TagInput({
     <div>
       <label>
         <span className="label">
-          {label}
-          {required && (
-            <>
-              {" "}
-              <RequiredMark />
-            </>
-          )}
+          {label} {required ? <RequiredMark /> : <OptionalMark />}
         </span>
         <div className="flex gap-2">
           <input
+            id={id}
             className="field"
             required={required && values.length === 0}
             aria-required={required || undefined}
@@ -780,12 +806,9 @@ function TagInput({
 }
 
 function RequiredMark() {
-  return (
-    <>
-      <span aria-hidden="true" className="text-red-500">
-        •
-      </span>
-      <span className="sr-only"> (required)</span>
-    </>
-  );
+  return <span className="text-xs font-medium text-blue-700">(Required)</span>;
+}
+
+function OptionalMark() {
+  return <span className="text-xs font-normal text-slate-500">(Optional)</span>;
 }

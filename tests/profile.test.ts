@@ -3,10 +3,26 @@ import {
   buildBusinessSnapshot,
   mapStoredBusinessProfile,
   profileCompletion,
+  missingRequiredProfileFields,
 } from "@/lib/profile";
 import { profileSchema } from "@/lib/schemas";
 
 describe("sectioned business profile migration", () => {
+  it("requires only five useful details and ignores optional fields", () => {
+    const profile = profileSchema.parse({
+      businessName: "Northstar Coffee",
+      basics: { industry: "Other", description: "A neighborhood coffee shop." },
+      offerings: { main: ["Coffee"] },
+      customers: { idealCustomer: "Nearby remote workers" },
+    });
+    expect(missingRequiredProfileFields(profile)).toEqual([]);
+    expect(profileCompletion(profile)).toBe(100);
+    profile.customers.idealCustomer = "   ";
+    expect(missingRequiredProfileFields(profile)).toEqual([
+      { id: "ideal-customer", label: "Ideal customer", section: "customers" },
+    ]);
+    expect(profileCompletion(profile)).toBe(80);
+  });
   it("preserves legacy values and normalizes a human-readable legal structure", () => {
     const profile = mapStoredBusinessProfile({
       business: {

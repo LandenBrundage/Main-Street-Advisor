@@ -18,6 +18,7 @@
     "dev": "bash scripts/with-supported-node.sh node_modules/next/dist/bin/next dev",
     "dev:demo": "ENABLE_DEMO_MODE=true ENABLE_DEMO_AI=true ENABLE_AI_MOCKS=false NEXT_DIST_DIR=.next-demo bash scripts/with-supported-node.sh node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3001",
     "dev:demo:offline": "ENABLE_DEMO_MODE=true ENABLE_DEMO_AI=false NEXT_DIST_DIR=.next-demo bash scripts/with-supported-node.sh node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3001",
+    "dev:demo:onboarding": "ENABLE_DEMO_MODE=true ENABLE_DEMO_AI=false ENABLE_DEMO_ONBOARDING=true NEXT_DIST_DIR=.next-onboarding bash scripts/with-supported-node.sh node_modules/next/dist/bin/next dev --hostname 127.0.0.1 --port 3002",
     "build": "bash scripts/with-supported-node.sh node_modules/next/dist/bin/next build",
     "start": "bash scripts/with-supported-node.sh node_modules/next/dist/bin/next start",
     "lint": "bash scripts/with-supported-node.sh node_modules/eslint/bin/eslint.js .",
